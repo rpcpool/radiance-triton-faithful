@@ -112,8 +112,9 @@ func main() {
 				klog.Errorf("Couldn't parse CID %s: %s", block.Cid(), err)
 				os.Exit(3)
 			}
-			for !entries.ListIterator().Done() {
-				_, entry, err := entries.ListIterator().Next()
+			extriesIter := entries.ListIterator()
+			for !extriesIter.Done() {
+				_, entry, err := extriesIter.Next()
 				if err != nil {
 					klog.Errorf("Couldn't parse CID %s: %s", block.Cid(), err)
 					os.Exit(3)
@@ -142,8 +143,9 @@ func main() {
 						klog.Errorf("Couldn't parse CID %s: %s", transactions, err)
 						os.Exit(3)
 					}
-					for !transactions.ListIterator().Done() {
-						_, txNode, err := transactions.ListIterator().Next()
+					txIter := transactions.ListIterator()
+					for !txIter.Done() {
+						_, txNode, err := txIter.Next()
 						if err != nil {
 							klog.Errorf("Couldn't parse CID %s: %s", block.Cid(), err)
 							os.Exit(3)
