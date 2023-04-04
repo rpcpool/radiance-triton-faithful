@@ -6,12 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -94,7 +94,10 @@ func run(c *cobra.Command, args []string) {
 	// }
 	start := time.Now()
 
-	workers := uint(1)
+	workers := *flagWorkers
+	if workers == 0 {
+		workers = uint(runtime.NumCPU())
+	}
 	rocksDB := args[0]
 	db, err := blockstore.OpenReadOnly(rocksDB)
 	if err != nil {
@@ -349,6 +352,10 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	printFirstThenStop := false
+	maxTxMetaSize := uint64(0)
+	maxTxMetaSizeMutex := &sync.Mutex{}
+	numFoundTxMeta := uint64(0)
+
 	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
 		keysToBeFound := make([][]byte, 0)
 		for _, outer := range entries {
@@ -379,13 +386,25 @@ func run(c *cobra.Command, args []string) {
 			{
 				for i, key := range keysToBeFound {
 					if got[i] == nil {
-						fmt.Println("not found", hex.EncodeToString(key))
+						panic(fmt.Errorf("key not found: %x", key))
+						continue
 					}
-					status, err := parseTxMeta(got[i].Data())
+					atomic.AddUint64(&numFoundTxMeta, 1)
+					metaBytes := got[i].Data()
+					func() {
+						maxTxMetaSizeMutex.Lock()
+						defer maxTxMetaSizeMutex.Unlock()
+						if uint64(len(metaBytes)) > (maxTxMetaSize) {
+							maxTxMetaSize = uint64(len(metaBytes))
+							klog.Infof("maxTxMetaSize: %s", humanize.Bytes(maxTxMetaSize))
+						}
+					}()
+					txMeta, err := parseTxMeta(metaBytes)
 					if err != nil {
 						panic(err)
 					}
-					status.Reset()
+					// TODO: use txMeta
+					txMeta.Reset()
 				}
 			}
 			got.Destroy()
@@ -447,6 +466,8 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Time taken: %s", timeTaken)
 	klog.Infof("Bytes Read: %d (%.2f MB/s)", numBytes.Load(), float64(numBytes.Load())/timeTaken.Seconds()/1000000)
 	klog.Infof("Transaction Count: %d (%.2f tps)", numTxns.Load(), float64(numTxns.Load())/timeTaken.Seconds())
+	klog.Infof("Transaction Metadata Count: %d", numFoundTxMeta)
+	klog.Infof("Max tx metadata size: %d (%s)", maxTxMetaSize, humanize.Bytes(maxTxMetaSize))
 	os.Exit(exitCode)
 }
 

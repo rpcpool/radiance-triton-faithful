@@ -48,7 +48,7 @@ func (w *worker) close() {
 }
 
 func (w *worker) run(ctx context.Context, callback Callback) error {
-	for w.readSlot(callback) {
+	for w.readSingleWholeSlot(callback) {
 		// Non-blocking recv on context, bail if cancelled.
 		select {
 		case <-ctx.Done():
@@ -64,7 +64,7 @@ func (w *worker) run(ctx context.Context, callback Callback) error {
 
 type Callback func(meta blockstore.SlotMeta, entries []blockstore.Entries) bool
 
-func (w *worker) readSlot(callback Callback) (shouldContinue bool) {
+func (w *worker) readSingleWholeSlot(callback Callback) (shouldContinue bool) {
 	if !w.meta.Valid() || !w.shred.Valid() {
 		return false
 	}
