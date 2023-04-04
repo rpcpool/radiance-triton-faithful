@@ -626,7 +626,12 @@ func run(c *cobra.Command, args []string) {
 		if err != nil {
 			panic(err)
 		}
-		klog.Infof("This process wrote %d bytes (%s) to disk", numBytesWrittenToDisk, humanize.Bytes(numBytesWrittenToDisk))
+		klog.Infof(
+			"This process wrote %d bytes (%s) to disk (%v/s)",
+			numBytesWrittenToDisk,
+			humanize.Bytes(numBytesWrittenToDisk),
+			humanize.Bytes(uint64(float64(numBytesWrittenToDisk)/timeTaken.Seconds())),
+		)
 	}
 	os.Exit(exitCode)
 }
