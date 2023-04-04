@@ -15,10 +15,13 @@ type Entry struct {
   numHashes  Int
   hash       Hash
   txs        TransactionList
+  txMetas    TransactionMetaList
 } representation tuple
 
 type Hash bytes
 
 type TransactionList [ Link ]
+
+type TransactionMetaList [ Link ]
 
 type Transaction bytes

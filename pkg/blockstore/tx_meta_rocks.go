@@ -19,9 +19,10 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 	defer got.Destroy()
 	result := make([]*confirmed_block.TransactionStatusMeta, len(keys))
 	for i, key := range keys {
-		if got[i] == nil || got[i].Size() == 0 {
-			continue
-		}
+		// if got[i] == nil || got[i].Size() == 0 {
+		// 	continue
+		// }
+		// TODO: what if got[i] is empty?
 		metaBytes := got[i].Data()
 		txMeta, err := ParseTransactionStatusMeta(metaBytes)
 		if err != nil {

@@ -1355,6 +1355,9 @@ func (n _Entry) FieldHash() Hash {
 func (n _Entry) FieldTxs() TransactionList {
 	return &n.txs
 }
+func (n _Entry) FieldTxMetas() TransactionMetaList {
+	return &n.txMetas
+}
 
 type _Entry__Maybe struct {
 	m schema.Maybe
@@ -1395,6 +1398,7 @@ var (
 	fieldName__Entry_NumHashes = _String{"numHashes"}
 	fieldName__Entry_Hash      = _String{"hash"}
 	fieldName__Entry_Txs       = _String{"txs"}
+	fieldName__Entry_TxMetas   = _String{"txMetas"}
 )
 var _ datamodel.Node = (Entry)(&_Entry{})
 var _ schema.TypedNode = (Entry)(&_Entry{})
@@ -1412,6 +1416,8 @@ func (n Entry) LookupByString(key string) (datamodel.Node, error) {
 		return &n.hash, nil
 	case "txs":
 		return &n.txs, nil
+	case "txMetas":
+		return &n.txMetas, nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
 	}
@@ -1439,7 +1445,7 @@ type _Entry__MapItr struct {
 }
 
 func (itr *_Entry__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) {
-	if itr.idx >= 4 {
+	if itr.idx >= 5 {
 		return nil, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -1455,6 +1461,9 @@ func (itr *_Entry__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	case 3:
 		k = &fieldName__Entry_Txs
 		v = &itr.n.txs
+	case 4:
+		k = &fieldName__Entry_TxMetas
+		v = &itr.n.txMetas
 	default:
 		panic("unreachable")
 	}
@@ -1462,14 +1471,14 @@ func (itr *_Entry__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	return
 }
 func (itr *_Entry__MapItr) Done() bool {
-	return itr.idx >= 4
+	return itr.idx >= 5
 }
 
 func (Entry) ListIterator() datamodel.ListIterator {
 	return nil
 }
 func (Entry) Length() int64 {
-	return 4
+	return 5
 }
 func (Entry) IsAbsent() bool {
 	return false
@@ -1535,6 +1544,7 @@ type _Entry__Assembler struct {
 	ca_numHashes _Int__Assembler
 	ca_hash      _Hash__Assembler
 	ca_txs       _TransactionList__Assembler
+	ca_txMetas   _TransactionMetaList__Assembler
 }
 
 func (na *_Entry__Assembler) reset() {
@@ -1544,6 +1554,7 @@ func (na *_Entry__Assembler) reset() {
 	na.ca_numHashes.reset()
 	na.ca_hash.reset()
 	na.ca_txs.reset()
+	na.ca_txMetas.reset()
 }
 
 var (
@@ -1551,7 +1562,8 @@ var (
 	fieldBit__Entry_NumHashes   = 1 << 1
 	fieldBit__Entry_Hash        = 1 << 2
 	fieldBit__Entry_Txs         = 1 << 3
-	fieldBits__Entry_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3
+	fieldBit__Entry_TxMetas     = 1 << 4
+	fieldBits__Entry_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3 + 1<<4
 )
 
 func (na *_Entry__Assembler) BeginMap(int64) (datamodel.MapAssembler, error) {
@@ -1685,6 +1697,16 @@ func (ma *_Entry__Assembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 4:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_txMetas.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -1745,6 +1767,16 @@ func (ma *_Entry__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, e
 		ma.ca_txs.w = &ma.w.txs
 		ma.ca_txs.m = &ma.cm
 		return &ma.ca_txs, nil
+	case "txMetas":
+		if ma.s&fieldBit__Entry_TxMetas != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Entry_TxMetas}
+		}
+		ma.s += fieldBit__Entry_TxMetas
+		ma.state = maState_midValue
+		ma.f = 4
+		ma.ca_txMetas.w = &ma.w.txMetas
+		ma.ca_txMetas.m = &ma.cm
+		return &ma.ca_txMetas, nil
 	}
 	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.Entry", Key: &_String{k}}
 }
@@ -1797,6 +1829,10 @@ func (ma *_Entry__Assembler) AssembleValue() datamodel.NodeAssembler {
 		ma.ca_txs.w = &ma.w.txs
 		ma.ca_txs.m = &ma.cm
 		return &ma.ca_txs
+	case 4:
+		ma.ca_txMetas.w = &ma.w.txMetas
+		ma.ca_txMetas.m = &ma.cm
+		return &ma.ca_txMetas
 	default:
 		panic("unreachable")
 	}
@@ -1829,6 +1865,9 @@ func (ma *_Entry__Assembler) Finish() error {
 		}
 		if ma.s&fieldBit__Entry_Txs == 0 {
 			err.Missing = append(err.Missing, "txs")
+		}
+		if ma.s&fieldBit__Entry_TxMetas == 0 {
+			err.Missing = append(err.Missing, "txMetas")
 		}
 		return err
 	}
@@ -1900,6 +1939,14 @@ func (ka *_Entry__KeyAssembler) AssignString(k string) error {
 		ka.state = maState_expectValue
 		ka.f = 3
 		return nil
+	case "txMetas":
+		if ka.s&fieldBit__Entry_TxMetas != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Entry_TxMetas}
+		}
+		ka.s += fieldBit__Entry_TxMetas
+		ka.state = maState_expectValue
+		ka.f = 4
+		return nil
 	default:
 		return schema.ErrInvalidKey{TypeName: "ipldsch.Entry", Key: &_String{k}}
 	}
@@ -1954,6 +2001,8 @@ func (n *_Entry__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
 		return n.hash.Representation(), nil
 	case 3:
 		return n.txs.Representation(), nil
+	case 4:
+		return n.txMetas.Representation(), nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
 	}
@@ -1978,7 +2027,7 @@ type _Entry__ReprListItr struct {
 }
 
 func (itr *_Entry__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
-	if itr.idx >= 4 {
+	if itr.idx >= 5 {
 		return -1, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -1994,6 +2043,9 @@ func (itr *_Entry__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	case 3:
 		idx = int64(itr.idx)
 		v = itr.n.txs.Representation()
+	case 4:
+		idx = int64(itr.idx)
+		v = itr.n.txMetas.Representation()
 	default:
 		panic("unreachable")
 	}
@@ -2001,11 +2053,11 @@ func (itr *_Entry__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	return
 }
 func (itr *_Entry__ReprListItr) Done() bool {
-	return itr.idx >= 4
+	return itr.idx >= 5
 }
 
 func (rn *_Entry__Repr) Length() int64 {
-	l := 4
+	l := 5
 	return int64(l)
 }
 func (_Entry__Repr) IsAbsent() bool {
@@ -2071,6 +2123,7 @@ type _Entry__ReprAssembler struct {
 	ca_numHashes _Int__ReprAssembler
 	ca_hash      _Hash__ReprAssembler
 	ca_txs       _TransactionList__ReprAssembler
+	ca_txMetas   _TransactionMetaList__ReprAssembler
 }
 
 func (na *_Entry__ReprAssembler) reset() {
@@ -2080,6 +2133,7 @@ func (na *_Entry__ReprAssembler) reset() {
 	na.ca_numHashes.reset()
 	na.ca_hash.reset()
 	na.ca_txs.reset()
+	na.ca_txMetas.reset()
 }
 func (_Entry__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
 	return mixins.ListAssembler{TypeName: "ipldsch.Entry.Repr"}.BeginMap(0)
@@ -2209,6 +2263,16 @@ func (la *_Entry__ReprAssembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 4:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -2224,8 +2288,8 @@ func (la *_Entry__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 	case laState_finished:
 		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
 	}
-	if la.f >= 4 {
-		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(4)}}
+	if la.f >= 5 {
+		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(5)}}
 	}
 	la.state = laState_midValue
 	switch la.f {
@@ -2245,6 +2309,10 @@ func (la *_Entry__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 		la.ca_txs.w = &la.w.txs
 		la.ca_txs.m = &la.cm
 		return &la.ca_txs
+	case 4:
+		la.ca_txMetas.w = &la.w.txMetas
+		la.ca_txMetas.m = &la.cm
+		return &la.ca_txMetas
 	default:
 		panic("unreachable")
 	}
@@ -6061,5 +6129,596 @@ func (la *_TransactionList__ReprAssembler) Finish() error {
 	return nil
 }
 func (la *_TransactionList__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
+	return _Link__ReprPrototype{}
+}
+
+func (n *_TransactionMetaList) Lookup(idx int64) Link {
+	if n.Length() <= idx {
+		return nil
+	}
+	v := &n.x[idx]
+	return v
+}
+func (n *_TransactionMetaList) LookupMaybe(idx int64) MaybeLink {
+	if n.Length() <= idx {
+		return nil
+	}
+	v := &n.x[idx]
+	return &_Link__Maybe{
+		m: schema.Maybe_Value,
+		v: *v,
+	}
+}
+
+var _TransactionMetaList__valueAbsent = _Link__Maybe{m: schema.Maybe_Absent}
+
+func (n TransactionMetaList) Iterator() *TransactionMetaList__Itr {
+	return &TransactionMetaList__Itr{n, 0}
+}
+
+type TransactionMetaList__Itr struct {
+	n   TransactionMetaList
+	idx int
+}
+
+func (itr *TransactionMetaList__Itr) Next() (idx int64, v Link) {
+	if itr.idx >= len(itr.n.x) {
+		return -1, nil
+	}
+	idx = int64(itr.idx)
+	v = &itr.n.x[itr.idx]
+	itr.idx++
+	return
+}
+func (itr *TransactionMetaList__Itr) Done() bool {
+	return itr.idx >= len(itr.n.x)
+}
+
+type _TransactionMetaList__Maybe struct {
+	m schema.Maybe
+	v _TransactionMetaList
+}
+type MaybeTransactionMetaList = *_TransactionMetaList__Maybe
+
+func (m MaybeTransactionMetaList) IsNull() bool {
+	return m.m == schema.Maybe_Null
+}
+func (m MaybeTransactionMetaList) IsAbsent() bool {
+	return m.m == schema.Maybe_Absent
+}
+func (m MaybeTransactionMetaList) Exists() bool {
+	return m.m == schema.Maybe_Value
+}
+func (m MaybeTransactionMetaList) AsNode() datamodel.Node {
+	switch m.m {
+	case schema.Maybe_Absent:
+		return datamodel.Absent
+	case schema.Maybe_Null:
+		return datamodel.Null
+	case schema.Maybe_Value:
+		return &m.v
+	default:
+		panic("unreachable")
+	}
+}
+func (m MaybeTransactionMetaList) Must() TransactionMetaList {
+	if !m.Exists() {
+		panic("unbox of a maybe rejected")
+	}
+	return &m.v
+}
+
+var _ datamodel.Node = (TransactionMetaList)(&_TransactionMetaList{})
+var _ schema.TypedNode = (TransactionMetaList)(&_TransactionMetaList{})
+
+func (TransactionMetaList) Kind() datamodel.Kind {
+	return datamodel.Kind_List
+}
+func (TransactionMetaList) LookupByString(string) (datamodel.Node, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.LookupByString("")
+}
+func (n TransactionMetaList) LookupByNode(k datamodel.Node) (datamodel.Node, error) {
+	idx, err := k.AsInt()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupByIndex(idx)
+}
+func (n TransactionMetaList) LookupByIndex(idx int64) (datamodel.Node, error) {
+	if n.Length() <= idx {
+		return nil, datamodel.ErrNotExists{Segment: datamodel.PathSegmentOfInt(idx)}
+	}
+	v := &n.x[idx]
+	return v, nil
+}
+func (n TransactionMetaList) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	i, err := seg.Index()
+	if err != nil {
+		return nil, datamodel.ErrInvalidSegmentForList{TypeName: "ipldsch.TransactionMetaList", TroubleSegment: seg, Reason: err}
+	}
+	return n.LookupByIndex(i)
+}
+func (TransactionMetaList) MapIterator() datamodel.MapIterator {
+	return nil
+}
+func (n TransactionMetaList) ListIterator() datamodel.ListIterator {
+	return &_TransactionMetaList__ListItr{n, 0}
+}
+
+type _TransactionMetaList__ListItr struct {
+	n   TransactionMetaList
+	idx int
+}
+
+func (itr *_TransactionMetaList__ListItr) Next() (idx int64, v datamodel.Node, _ error) {
+	if itr.idx >= len(itr.n.x) {
+		return -1, nil, datamodel.ErrIteratorOverread{}
+	}
+	idx = int64(itr.idx)
+	x := &itr.n.x[itr.idx]
+	v = x
+	itr.idx++
+	return
+}
+func (itr *_TransactionMetaList__ListItr) Done() bool {
+	return itr.idx >= len(itr.n.x)
+}
+
+func (n TransactionMetaList) Length() int64 {
+	return int64(len(n.x))
+}
+func (TransactionMetaList) IsAbsent() bool {
+	return false
+}
+func (TransactionMetaList) IsNull() bool {
+	return false
+}
+func (TransactionMetaList) AsBool() (bool, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsBool()
+}
+func (TransactionMetaList) AsInt() (int64, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsInt()
+}
+func (TransactionMetaList) AsFloat() (float64, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsFloat()
+}
+func (TransactionMetaList) AsString() (string, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsString()
+}
+func (TransactionMetaList) AsBytes() ([]byte, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsBytes()
+}
+func (TransactionMetaList) AsLink() (datamodel.Link, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList"}.AsLink()
+}
+func (TransactionMetaList) Prototype() datamodel.NodePrototype {
+	return _TransactionMetaList__Prototype{}
+}
+
+type _TransactionMetaList__Prototype struct{}
+
+func (_TransactionMetaList__Prototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _TransactionMetaList__Builder
+	nb.Reset()
+	return &nb
+}
+
+type _TransactionMetaList__Builder struct {
+	_TransactionMetaList__Assembler
+}
+
+func (nb *_TransactionMetaList__Builder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_TransactionMetaList__Builder) Reset() {
+	var w _TransactionMetaList
+	var m schema.Maybe
+	*nb = _TransactionMetaList__Builder{_TransactionMetaList__Assembler{w: &w, m: &m}}
+}
+
+type _TransactionMetaList__Assembler struct {
+	w     *_TransactionMetaList
+	m     *schema.Maybe
+	state laState
+
+	cm schema.Maybe
+	va _Link__Assembler
+}
+
+func (na *_TransactionMetaList__Assembler) reset() {
+	na.state = laState_initial
+	na.va.reset()
+}
+func (_TransactionMetaList__Assembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.BeginMap(0)
+}
+func (na *_TransactionMetaList__Assembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if sizeHint < 0 {
+		sizeHint = 0
+	}
+	if sizeHint > 0 {
+		na.w.x = make([]_Link, 0, sizeHint)
+	}
+	return na, nil
+}
+func (na *_TransactionMetaList__Assembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_TransactionMetaList__Assembler) AssignBool(bool) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignBool(false)
+}
+func (_TransactionMetaList__Assembler) AssignInt(int64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignInt(0)
+}
+func (_TransactionMetaList__Assembler) AssignFloat(float64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignFloat(0)
+}
+func (_TransactionMetaList__Assembler) AssignString(string) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignString("")
+}
+func (_TransactionMetaList__Assembler) AssignBytes([]byte) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignBytes(nil)
+}
+func (_TransactionMetaList__Assembler) AssignLink(datamodel.Link) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList"}.AssignLink(nil)
+}
+func (na *_TransactionMetaList__Assembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_TransactionMetaList); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_List {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.TransactionMetaList", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustList, ActualKind: v.Kind()}
+	}
+	itr := v.ListIterator()
+	for !itr.Done() {
+		_, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_TransactionMetaList__Assembler) Prototype() datamodel.NodePrototype {
+	return _TransactionMetaList__Prototype{}
+}
+func (la *_TransactionMetaList__Assembler) valueFinishTidy() bool {
+	switch la.cm {
+	case schema.Maybe_Value:
+		la.va.w = nil
+		la.cm = schema.Maybe_Absent
+		la.state = laState_initial
+		la.va.reset()
+		return true
+	default:
+		return false
+	}
+}
+func (la *_TransactionMetaList__Assembler) AssembleValue() datamodel.NodeAssembler {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: AssembleValue cannot be called when still in the middle of assembling the previous value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	la.w.x = append(la.w.x, _Link{})
+	la.state = laState_midValue
+	row := &la.w.x[len(la.w.x)-1]
+	la.va.w = row
+	la.va.m = &la.cm
+	return &la.va
+}
+func (la *_TransactionMetaList__Assembler) Finish() error {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	la.state = laState_finished
+	*la.m = schema.Maybe_Value
+	return nil
+}
+func (la *_TransactionMetaList__Assembler) ValuePrototype(_ int64) datamodel.NodePrototype {
+	return _Link__Prototype{}
+}
+func (TransactionMetaList) Type() schema.Type {
+	return nil /*TODO:typelit*/
+}
+func (n TransactionMetaList) Representation() datamodel.Node {
+	return (*_TransactionMetaList__Repr)(n)
+}
+
+type _TransactionMetaList__Repr _TransactionMetaList
+
+var _ datamodel.Node = &_TransactionMetaList__Repr{}
+
+func (_TransactionMetaList__Repr) Kind() datamodel.Kind {
+	return datamodel.Kind_List
+}
+func (_TransactionMetaList__Repr) LookupByString(string) (datamodel.Node, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.LookupByString("")
+}
+func (nr *_TransactionMetaList__Repr) LookupByNode(k datamodel.Node) (datamodel.Node, error) {
+	v, err := (TransactionMetaList)(nr).LookupByNode(k)
+	if err != nil || v == datamodel.Null {
+		return v, err
+	}
+	return v.(Link).Representation(), nil
+}
+func (nr *_TransactionMetaList__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
+	v, err := (TransactionMetaList)(nr).LookupByIndex(idx)
+	if err != nil || v == datamodel.Null {
+		return v, err
+	}
+	return v.(Link).Representation(), nil
+}
+func (n _TransactionMetaList__Repr) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	i, err := seg.Index()
+	if err != nil {
+		return nil, datamodel.ErrInvalidSegmentForList{TypeName: "ipldsch.TransactionMetaList.Repr", TroubleSegment: seg, Reason: err}
+	}
+	return n.LookupByIndex(i)
+}
+func (_TransactionMetaList__Repr) MapIterator() datamodel.MapIterator {
+	return nil
+}
+func (nr *_TransactionMetaList__Repr) ListIterator() datamodel.ListIterator {
+	return &_TransactionMetaList__ReprListItr{(TransactionMetaList)(nr), 0}
+}
+
+type _TransactionMetaList__ReprListItr _TransactionMetaList__ListItr
+
+func (itr *_TransactionMetaList__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
+	idx, v, err = (*_TransactionMetaList__ListItr)(itr).Next()
+	if err != nil || v == datamodel.Null {
+		return
+	}
+	return idx, v.(Link).Representation(), nil
+}
+func (itr *_TransactionMetaList__ReprListItr) Done() bool {
+	return (*_TransactionMetaList__ListItr)(itr).Done()
+}
+
+func (rn *_TransactionMetaList__Repr) Length() int64 {
+	return int64(len(rn.x))
+}
+func (_TransactionMetaList__Repr) IsAbsent() bool {
+	return false
+}
+func (_TransactionMetaList__Repr) IsNull() bool {
+	return false
+}
+func (_TransactionMetaList__Repr) AsBool() (bool, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsBool()
+}
+func (_TransactionMetaList__Repr) AsInt() (int64, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsInt()
+}
+func (_TransactionMetaList__Repr) AsFloat() (float64, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsFloat()
+}
+func (_TransactionMetaList__Repr) AsString() (string, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsString()
+}
+func (_TransactionMetaList__Repr) AsBytes() ([]byte, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsBytes()
+}
+func (_TransactionMetaList__Repr) AsLink() (datamodel.Link, error) {
+	return mixins.List{TypeName: "ipldsch.TransactionMetaList.Repr"}.AsLink()
+}
+func (_TransactionMetaList__Repr) Prototype() datamodel.NodePrototype {
+	return _TransactionMetaList__ReprPrototype{}
+}
+
+type _TransactionMetaList__ReprPrototype struct{}
+
+func (_TransactionMetaList__ReprPrototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _TransactionMetaList__ReprBuilder
+	nb.Reset()
+	return &nb
+}
+
+type _TransactionMetaList__ReprBuilder struct {
+	_TransactionMetaList__ReprAssembler
+}
+
+func (nb *_TransactionMetaList__ReprBuilder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_TransactionMetaList__ReprBuilder) Reset() {
+	var w _TransactionMetaList
+	var m schema.Maybe
+	*nb = _TransactionMetaList__ReprBuilder{_TransactionMetaList__ReprAssembler{w: &w, m: &m}}
+}
+
+type _TransactionMetaList__ReprAssembler struct {
+	w     *_TransactionMetaList
+	m     *schema.Maybe
+	state laState
+
+	cm schema.Maybe
+	va _Link__ReprAssembler
+}
+
+func (na *_TransactionMetaList__ReprAssembler) reset() {
+	na.state = laState_initial
+	na.va.reset()
+}
+func (_TransactionMetaList__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.BeginMap(0)
+}
+func (na *_TransactionMetaList__ReprAssembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if sizeHint < 0 {
+		sizeHint = 0
+	}
+	if sizeHint > 0 {
+		na.w.x = make([]_Link, 0, sizeHint)
+	}
+	return na, nil
+}
+func (na *_TransactionMetaList__ReprAssembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr.Repr"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_TransactionMetaList__ReprAssembler) AssignBool(bool) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignBool(false)
+}
+func (_TransactionMetaList__ReprAssembler) AssignInt(int64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignInt(0)
+}
+func (_TransactionMetaList__ReprAssembler) AssignFloat(float64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignFloat(0)
+}
+func (_TransactionMetaList__ReprAssembler) AssignString(string) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignString("")
+}
+func (_TransactionMetaList__ReprAssembler) AssignBytes([]byte) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignBytes(nil)
+}
+func (_TransactionMetaList__ReprAssembler) AssignLink(datamodel.Link) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.TransactionMetaList.Repr"}.AssignLink(nil)
+}
+func (na *_TransactionMetaList__ReprAssembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_TransactionMetaList); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_List {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.TransactionMetaList.Repr", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustList, ActualKind: v.Kind()}
+	}
+	itr := v.ListIterator()
+	for !itr.Done() {
+		_, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_TransactionMetaList__ReprAssembler) Prototype() datamodel.NodePrototype {
+	return _TransactionMetaList__ReprPrototype{}
+}
+func (la *_TransactionMetaList__ReprAssembler) valueFinishTidy() bool {
+	switch la.cm {
+	case schema.Maybe_Value:
+		la.va.w = nil
+		la.cm = schema.Maybe_Absent
+		la.state = laState_initial
+		la.va.reset()
+		return true
+	default:
+		return false
+	}
+}
+func (la *_TransactionMetaList__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: AssembleValue cannot be called when still in the middle of assembling the previous value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	la.w.x = append(la.w.x, _Link{})
+	la.state = laState_midValue
+	row := &la.w.x[len(la.w.x)-1]
+	la.va.w = row
+	la.va.m = &la.cm
+	return &la.va
+}
+func (la *_TransactionMetaList__ReprAssembler) Finish() error {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	la.state = laState_finished
+	*la.m = schema.Maybe_Value
+	return nil
+}
+func (la *_TransactionMetaList__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
 	return _Link__ReprPrototype{}
 }

@@ -19,34 +19,36 @@ var _ datamodel.Node = nil // suppress errors when this dependency is not refere
 var Type typeSlab
 
 type typeSlab struct {
-	Block                 _Block__Prototype
-	Block__Repr           _Block__ReprPrototype
-	Bool                  _Bool__Prototype
-	Bool__Repr            _Bool__ReprPrototype
-	Bytes                 _Bytes__Prototype
-	Bytes__Repr           _Bytes__ReprPrototype
-	Entry                 _Entry__Prototype
-	Entry__Repr           _Entry__ReprPrototype
-	Float                 _Float__Prototype
-	Float__Repr           _Float__ReprPrototype
-	Hash                  _Hash__Prototype
-	Hash__Repr            _Hash__ReprPrototype
-	Int                   _Int__Prototype
-	Int__Repr             _Int__ReprPrototype
-	Link                  _Link__Prototype
-	Link__Repr            _Link__ReprPrototype
-	List__Link            _List__Link__Prototype
-	List__Link__Repr      _List__Link__ReprPrototype
-	List__Shredding       _List__Shredding__Prototype
-	List__Shredding__Repr _List__Shredding__ReprPrototype
-	Shredding             _Shredding__Prototype
-	Shredding__Repr       _Shredding__ReprPrototype
-	String                _String__Prototype
-	String__Repr          _String__ReprPrototype
-	Transaction           _Transaction__Prototype
-	Transaction__Repr     _Transaction__ReprPrototype
-	TransactionList       _TransactionList__Prototype
-	TransactionList__Repr _TransactionList__ReprPrototype
+	Block                     _Block__Prototype
+	Block__Repr               _Block__ReprPrototype
+	Bool                      _Bool__Prototype
+	Bool__Repr                _Bool__ReprPrototype
+	Bytes                     _Bytes__Prototype
+	Bytes__Repr               _Bytes__ReprPrototype
+	Entry                     _Entry__Prototype
+	Entry__Repr               _Entry__ReprPrototype
+	Float                     _Float__Prototype
+	Float__Repr               _Float__ReprPrototype
+	Hash                      _Hash__Prototype
+	Hash__Repr                _Hash__ReprPrototype
+	Int                       _Int__Prototype
+	Int__Repr                 _Int__ReprPrototype
+	Link                      _Link__Prototype
+	Link__Repr                _Link__ReprPrototype
+	List__Link                _List__Link__Prototype
+	List__Link__Repr          _List__Link__ReprPrototype
+	List__Shredding           _List__Shredding__Prototype
+	List__Shredding__Repr     _List__Shredding__ReprPrototype
+	Shredding                 _Shredding__Prototype
+	Shredding__Repr           _Shredding__ReprPrototype
+	String                    _String__Prototype
+	String__Repr              _String__ReprPrototype
+	Transaction               _Transaction__Prototype
+	Transaction__Repr         _Transaction__ReprPrototype
+	TransactionList           _TransactionList__Prototype
+	TransactionList__Repr     _TransactionList__ReprPrototype
+	TransactionMetaList       _TransactionMetaList__Prototype
+	TransactionMetaList__Repr _TransactionMetaList__ReprPrototype
 }
 
 // --- type definitions follow ---
@@ -75,6 +77,7 @@ type _Entry struct {
 	numHashes _Int
 	hash      _Hash
 	txs       _TransactionList
+	txMetas   _TransactionMetaList
 }
 
 // Float matches the IPLD Schema type "Float".  It has float kind.
@@ -123,5 +126,11 @@ type _Transaction struct{ x []byte }
 // TransactionList matches the IPLD Schema type "TransactionList".  It has list kind.
 type TransactionList = *_TransactionList
 type _TransactionList struct {
+	x []_Link
+}
+
+// TransactionMetaList matches the IPLD Schema type "TransactionMetaList".  It has list kind.
+type TransactionMetaList = *_TransactionMetaList
+type _TransactionMetaList struct {
 	x []_Link
 }

@@ -220,6 +220,7 @@ func (w *Worker) writeSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) e
 	}
 
 	entryNum := 0
+	txNum := 0
 	klog.V(3).Infof("Slot %d", slot)
 	for i, batch := range entries {
 		klog.V(6).Infof("Slot %d batch %d", slot, i)
@@ -242,11 +243,14 @@ func (w *Worker) writeSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) e
 				pos.LastShred = int(meta.EntryEndIndexes[i])
 			}
 
-			if err := asm.WriteEntry(entry, pos); err != nil {
+			// TODO: is this correct?
+			transactionMetas := txMetas[txNum : txNum+len(entry.Txns)]
+
+			if err := asm.WriteEntry(entry, pos, transactionMetas); err != nil {
 				return fmt.Errorf("failed to write slot %d shred %d (batch %d index %d): %s",
 					slot, entryNum, i, j, err)
 			}
-
+			txNum += len(entry.Txns)
 			entryNum++
 		}
 	}
