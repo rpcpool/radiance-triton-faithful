@@ -47,8 +47,8 @@ func (w *worker) close() {
 	w.shred.Close()
 }
 
-func (w *worker) run(ctx context.Context) error {
-	for w.readSlot() {
+func (w *worker) run(ctx context.Context, callback Callback) error {
+	for w.readSlot(callback) {
 		// Non-blocking recv on context, bail if cancelled.
 		select {
 		case <-ctx.Done():
@@ -62,7 +62,9 @@ func (w *worker) run(ctx context.Context) error {
 	return nil
 }
 
-func (w *worker) readSlot() (shouldContinue bool) {
+type Callback func(meta blockstore.SlotMeta, entries []blockstore.Entries) bool
+
+func (w *worker) readSlot(callback Callback) (shouldContinue bool) {
 	if !w.meta.Valid() || !w.shred.Valid() {
 		return false
 	}
@@ -88,11 +90,14 @@ func (w *worker) readSlot() (shouldContinue bool) {
 		}
 	}()
 
+	metaKeyData := w.meta.Key().Data()
+	metaValueData := w.meta.Value().Data()
+
 	// Meta iter indicates progress
 	var ok bool
-	metaSlot, ok = blockstore.ParseSlotKey(w.meta.Key().Data())
+	metaSlot, ok = blockstore.ParseSlotKey(metaKeyData)
 	if !ok {
-		klog.Warningf("Skipping invalid slot key: %x", w.meta.Key().Data())
+		klog.Warningf("Skipping invalid slot key: %x", metaKeyData)
 		return
 	}
 	if metaSlot >= w.stop {
@@ -122,10 +127,12 @@ func (w *worker) readSlot() (shouldContinue bool) {
 		w.numSkipped.Add(step - 1)
 	}
 
+	shredDeyData := w.shred.Key().Data()
+
 	// Shred iterator should follow meta iter
-	shredSlot, _, ok := blockstore.ParseShredKey(w.shred.Key().Data())
+	shredSlot, _, ok := blockstore.ParseShredKey(shredDeyData)
 	if !ok {
-		klog.Warningf("invalid shred key, syncing: %x", w.shred.Key().Data())
+		klog.Warningf("invalid shred key, syncing: %x", shredDeyData)
 	} else if shredSlot < metaSlot {
 		// Probably a skipped slots
 		klog.V(4).Infof("slot %d: not all shreds consumed", metaSlot)
@@ -136,25 +143,25 @@ func (w *worker) readSlot() (shouldContinue bool) {
 
 	// Synchronize shred iter with meta iter
 	if !ok || shredSlot < metaSlot {
-		w.shred.Seek(w.meta.Key().Data())
+		w.shred.Seek(metaKeyData)
 		if !w.shred.Valid() {
 			klog.Warningf("slot %d: reached end of shreds", metaSlot)
 		}
-		shredSlot, _, ok = blockstore.ParseShredKey(w.shred.Key().Data())
+		shredSlot, _, ok = blockstore.ParseShredKey(shredDeyData)
 		if !ok {
 			// Double failure, just go to next slot
-			klog.Warningf("slot %d: invalid shred key after sync: %x", metaSlot, w.shred.Key().Data())
+			klog.Warningf("slot %d: invalid shred key after sync: %x", metaSlot, shredDeyData)
 			return
 		}
 	}
 
-	numBytes := uint64(len(w.meta.Value().Data()))
+	numBytes := uint64(len(metaValueData))
 	defer func() {
 		w.numBytes.Add(numBytes)
 	}()
 
 	// Parse meta value.
-	meta, err := blockstore.ParseBincode[blockstore.SlotMeta](w.meta.Value().Data())
+	meta, err := blockstore.ParseBincode[blockstore.SlotMeta](metaValueData)
 	if err != nil {
 		klog.Warningf("slot %d: invalid meta: %s", metaSlot, err)
 		return
@@ -181,24 +188,25 @@ func (w *worker) readSlot() (shouldContinue bool) {
 		return
 	}
 
-	var numTxns uint64
-	for _, outer := range entries {
-		for _, e := range outer.Entries {
-			numTxns += uint64(len(e.Txns))
-			if *flagDumpSigs {
-				for _, tx := range e.Txns {
-					if len(tx.Signatures) > 0 {
-						fmt.Println(tx.Signatures[0].String())
-					}
-				}
+	{
+		// TODO: remove this
+		var numTxns uint64
+		for _, outer := range entries {
+			for _, e := range outer.Entries {
+				numTxns += uint64(len(e.Txns))
 			}
 		}
+		w.numTxns.Add(numTxns)
 	}
-	w.numTxns.Add(numTxns)
 
 	// TODO Sigverify / sanitize txs
-
 	success = true
+	{
+		doContinue := callback(*meta, entries)
+		if !doContinue {
+			shouldContinue = false
+		}
+	}
 
 	return
 }

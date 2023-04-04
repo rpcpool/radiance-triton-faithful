@@ -47,6 +47,7 @@ const (
 
 	CfBankHash = "bank_hashes"
 
+	// CfTxStatus contains transaction metadata (TransactionStatusMeta)
 	CfTxStatus = "transaction_status"
 
 	CfTxStatusIndex = "transaction_status_index"
