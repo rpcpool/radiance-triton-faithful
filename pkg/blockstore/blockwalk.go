@@ -1,6 +1,9 @@
 package blockstore
 
-import "go.firedancer.io/radiance/pkg/shred"
+import (
+	"go.firedancer.io/radiance/pkg/shred"
+	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
+)
 
 // BlockWalkI abstracts iterators over block data.
 //
@@ -20,4 +23,5 @@ type BlockWalkI interface {
 	//
 	// The inner slices are the entries in each shred batch, usually sized one.
 	Entries(meta *SlotMeta) (batches [][]shred.Entry, err error)
+	TransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error)
 }

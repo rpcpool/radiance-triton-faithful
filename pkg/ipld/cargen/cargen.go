@@ -4,6 +4,7 @@ package cargen
 import (
 	"bufio"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/gagliardetto/solana-go"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
@@ -77,7 +79,7 @@ type Worker struct {
 //
 // Creates the directory if it doesn't exist yet.
 func NewWorker(dir string, epoch uint64, walk blockstore.BlockWalkI) (*Worker, error) {
-	if err := os.Mkdir(dir, 0777); err != nil && !errors.Is(err, fs.ErrExist) {
+	if err := os.Mkdir(dir, 0o777); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 
@@ -207,6 +209,16 @@ func (w *Worker) writeSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) e
 	slot := meta.Slot
 	asm := ipldgen.NewBlockAssembler(w.handle.writer, slot)
 
+	transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
+	if err != nil {
+		return err
+	}
+
+	txMetas, err := w.walk.TransactionMetas(transactionMetaKeys...)
+	if err != nil {
+		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+	}
+
 	entryNum := 0
 	klog.V(3).Infof("Slot %d", slot)
 	for i, batch := range entries {
@@ -247,6 +259,30 @@ func (w *Worker) writeSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) e
 	return nil
 }
 
+func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {
+	keys := make([][]byte, 0)
+	for _, batch := range entries {
+		for _, entry := range batch {
+			for _, tx := range entry.Txns {
+				firstSig := tx.Signatures[0]
+				keys = append(keys, FormatTxMetadataKey(slot, firstSig))
+			}
+		}
+	}
+	return keys, nil
+}
+
+func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+	key := make([]byte, 80)
+	// the first 8 bytes are empty; fill them with zeroes
+	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
+	// then comes the signature
+	copy(key[8:], sig[:])
+	// then comes the slot
+	binary.BigEndian.PutUint64(key[72:], slot)
+	return key
+}
+
 type carHandle struct {
 	file       *os.File
 	cache      *bufio.Writer
@@ -261,7 +297,7 @@ func (c *carHandle) open(dir string, epoch uint64, slot uint64) error {
 		return fmt.Errorf("handle not closed")
 	}
 	p := filepath.Join(dir, fmt.Sprintf("ledger-e%d-s%d.car", epoch, slot))
-	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0666)
+	f, err := os.OpenFile(p, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o666)
 	if err != nil {
 		return fmt.Errorf("failed to create CAR: %w", err)
 	}
