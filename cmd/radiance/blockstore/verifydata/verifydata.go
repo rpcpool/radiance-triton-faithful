@@ -6,12 +6,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -58,32 +58,24 @@ func init() {
 	Cmd.Run = run
 }
 
-var byte80Pool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, 80)
-	},
-}
-
-func formatTxMetadataKey(slot uint64, sig solana.Signature) ([]byte, func()) {
-	key := byte80Pool.Get().([]byte)
+func formatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+	key := make([]byte, 80)
 	// the first 8 bytes are empty; fill them with zeroes
 	copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
 	// then comes the signature
 	copy(key[8:], sig[:])
 	// then comes the slot
 	binary.BigEndian.PutUint64(key[72:], slot)
-	return key, func() {
-		byte80Pool.Put(key)
-	}
+	return key
 }
 
-func parseTxMeta(buf []byte) (confirmed_block.TransactionStatusMeta, error) {
+func parseTxMeta(buf []byte) (*confirmed_block.TransactionStatusMeta, error) {
 	var status confirmed_block.TransactionStatusMeta
 	err := proto.Unmarshal(buf, &status)
 	if err != nil {
-		return status, err
+		return nil, err
 	}
-	return status, nil
+	return &status, nil
 }
 
 func init() {
@@ -358,6 +350,7 @@ func run(c *cobra.Command, args []string) {
 
 	printFirstThenStop := false
 	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
+		keysToBeFound := make([][]byte, 0)
 		for _, outer := range entries {
 			for _, e := range outer.Entries {
 				for _, tx := range e.Txns {
@@ -368,27 +361,8 @@ func run(c *cobra.Command, args []string) {
 								spew.Dump(slotMeta)
 								fmt.Println(firstSignature.String())
 							}
-							{
-								key, cleanup := formatTxMetadataKey(slotMeta.Slot, firstSignature)
-								defer cleanup()
-								// try find the tx meta
-								got, err := db.DB.Get(grocksdb.NewDefaultReadOptions(), key)
-								if err != nil {
-									spew.Dump(slotMeta)
-									fmt.Println(firstSignature.String())
-									panic(err)
-								}
-								if false {
-									status, err := parseTxMeta(got.Data())
-									if err != nil {
-										spew.Dump(slotMeta)
-										fmt.Println(firstSignature.String())
-										panic(err)
-									}
-									status.Reset()
-								}
-								got.Free()
-							}
+							key := formatTxMetadataKey(slotMeta.Slot, firstSignature)
+							keysToBeFound = append(keysToBeFound, key)
 							if printFirstThenStop {
 								os.Exit(0)
 							}
@@ -396,6 +370,25 @@ func run(c *cobra.Command, args []string) {
 					}
 				}
 			}
+		}
+		{
+			got, err := db.DB.MultiGet(grocksdb.NewDefaultReadOptions(), keysToBeFound...)
+			if err != nil {
+				panic(err)
+			}
+			{
+				for i, key := range keysToBeFound {
+					if got[i] == nil {
+						fmt.Println("not found", hex.EncodeToString(key))
+					}
+					status, err := parseTxMeta(got[i].Data())
+					if err != nil {
+						panic(err)
+					}
+					status.Reset()
+				}
+			}
+			got.Destroy()
 		}
 		return true
 	}
