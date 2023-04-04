@@ -3,6 +3,7 @@
 package verifydata
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -12,6 +13,8 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -382,17 +385,20 @@ func run(c *cobra.Command, args []string) {
 	numFoundTxMeta := uint64(0)
 	numFoundEmtyTxMeta := uint64(0)
 
-	slotSizes := make(map[uint64][]uint64)
+	slotSizesRaw := make(map[uint64][]uint64)
 	slotSizesCompressed := make(map[uint64][]uint64)
+	slotNumTransactions := make(map[uint64][]uint64)
 	slotSizesMu := &sync.Mutex{}
 
 	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
 		totalSize := uint64(0)
+		numTransactions := uint64(0)
 		keysToBeFound := make([][]byte, 0)
 
 		bufTx := make([]byte, 0)
 		for _, outer := range entries {
 			for _, e := range outer.Entries {
+				numTransactions += uint64(len(e.Txns))
 				for _, tx := range e.Txns {
 					{
 						marshaled, err := tx.MarshalBinary()
@@ -455,8 +461,9 @@ func run(c *cobra.Command, args []string) {
 			compressed := Compress(bufTx)
 			compressedSize := uint64(len(compressed))
 			slotSizesMu.Lock()
-			slotSizes[slotMeta.Slot] = append(slotSizes[slotMeta.Slot], totalSize)
+			slotSizesRaw[slotMeta.Slot] = append(slotSizesRaw[slotMeta.Slot], totalSize)
 			slotSizesCompressed[slotMeta.Slot] = append(slotSizesCompressed[slotMeta.Slot], compressedSize)
+			slotNumTransactions[slotMeta.Slot] = append(slotNumTransactions[slotMeta.Slot], numTransactions)
 			slotSizesMu.Unlock()
 		}
 		return true
@@ -520,7 +527,7 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Empty Transaction Metadata Count: %d", numFoundEmtyTxMeta)
 	klog.Infof("Max tx metadata size: %d (%s)", maxTxMetaSize, humanize.Bytes((maxTxMetaSize)))
 	{
-		for slot, sizes := range slotSizes {
+		for slot, sizes := range slotSizesRaw {
 			if len(sizes) > 1 {
 				klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
 			}
@@ -528,7 +535,7 @@ func run(c *cobra.Command, args []string) {
 		{
 			maxSlotSize := uint64(0)
 			minSlotSize := uint64(math.MaxUint64)
-			for slot, sizes := range slotSizes {
+			for slot, sizes := range slotSizesRaw {
 				if condition := len(sizes) > 1; condition {
 					klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
 				}
@@ -545,24 +552,81 @@ func run(c *cobra.Command, args []string) {
 			klog.Infof("Min slot size: %d (%s)", minSlotSize, humanize.Bytes((minSlotSize)))
 		}
 		{
-			maxSlotSize := uint64(0)
-			minSlotSize := uint64(math.MaxUint64)
+			max := uint64(0)
+			min := uint64(math.MaxUint64)
 			for slot, sizes := range slotSizesCompressed {
 				if condition := len(sizes) > 1; condition {
 					klog.Infof("slot %d has multiple compressed sizes: %v", slot, sizes)
 				}
 				for _, size := range sizes {
-					if size > maxSlotSize {
-						maxSlotSize = size
+					if size > max {
+						max = size
 					}
-					if size > 0 && size < minSlotSize {
-						minSlotSize = size
+					if size > 0 && size < min {
+						min = size
 					}
 				}
 			}
-			klog.Infof("Compressed Max slot size: %d (%s)", maxSlotSize, humanize.Bytes((maxSlotSize)))
-			klog.Infof("Compressed Min slot size: %d (%s)", minSlotSize, humanize.Bytes((minSlotSize)))
+			klog.Infof("Compressed Max slot size: %d (%s)", max, humanize.Bytes((max)))
+			klog.Infof("Compressed Min slot size: %d (%s)", min, humanize.Bytes((min)))
 		}
+		{
+			max := uint64(0)
+			min := uint64(math.MaxUint64)
+			for slot, sizes := range slotNumTransactions {
+				if condition := len(sizes) > 1; condition {
+					klog.Infof("slot %d has multiple numTransactions: %v", slot, sizes)
+				}
+				for _, size := range sizes {
+					if size > max {
+						max = size
+					}
+					if size > 0 && size < min {
+						min = size
+					}
+				}
+			}
+			klog.Infof("Max slot numTransactions: %d", max)
+			klog.Infof("Min slot numTransactions: %d", min)
+		}
+		{
+			// min, max compression ratio
+			max := float64(0)
+			min := float64(math.MaxFloat64)
+			for slot, sizes := range slotSizesCompressed {
+				if condition := len(sizes) > 1; condition {
+					klog.Infof("slot %d has multiple compressed sizes: %v", slot, sizes)
+				}
+				for _, size := range sizes {
+					if size > 0 {
+						ratio := float64(slotSizesRaw[slot][0]) / float64(size)
+						if ratio > max {
+							max = ratio
+						}
+						if ratio < min {
+							min = ratio
+						}
+					}
+				}
+			}
+			klog.Infof("Max slot compression ratio: %.2f", max)
+			klog.Infof("Min slot compression ratio: %.2f", min)
+		}
+		numBytesReadFromDisk, err := getDiskReadBytes()
+		if err != nil {
+			panic(err)
+		}
+		klog.Infof(
+			"This process read %d bytes (%s) from disk (%v/s)",
+			numBytesReadFromDisk,
+			humanize.Bytes(numBytesReadFromDisk),
+			humanize.Bytes(uint64(float64(numBytesReadFromDisk)/timeTaken.Seconds())),
+		)
+		numBytesWrittenToDisk, err := getDiskWriteBytes()
+		if err != nil {
+			panic(err)
+		}
+		klog.Infof("This process wrote %d bytes (%s) to disk", numBytesWrittenToDisk, humanize.Bytes(numBytesWrittenToDisk))
 	}
 	os.Exit(exitCode)
 }
@@ -627,4 +691,47 @@ func (w *WriterCounter) Count() uint64 {
 		return 0
 	}
 	return *w.counter
+}
+
+// get how much this process reads from disk
+func getDiskReadBytes() (uint64, error) {
+	file, err := os.Open("/proc/self/io")
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "read_bytes:") {
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				return 0, fmt.Errorf("invalid read_bytes line: %s", line)
+			}
+			return strconv.ParseUint(fields[1], 10, 64)
+		}
+	}
+	return 0, fmt.Errorf("read_bytes not found")
+}
+
+func getDiskWriteBytes() (uint64, error) {
+	file, err := os.Open("/proc/self/io")
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "write_bytes:") {
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				return 0, fmt.Errorf("invalid write_bytes line: %s", line)
+			}
+			return strconv.ParseUint(fields[1], 10, 64)
+		}
+	}
+	return 0, fmt.Errorf("write_bytes not found")
 }
