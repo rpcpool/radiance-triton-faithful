@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"runtime"
 	"sync"
@@ -382,11 +383,14 @@ func run(c *cobra.Command, args []string) {
 	numFoundEmtyTxMeta := uint64(0)
 
 	slotSizes := make(map[uint64][]uint64)
+	slotSizesCompressed := make(map[uint64][]uint64)
 	slotSizesMu := &sync.Mutex{}
 
 	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
 		totalSize := uint64(0)
 		keysToBeFound := make([][]byte, 0)
+
+		bufTx := make([]byte, 0)
 		for _, outer := range entries {
 			for _, e := range outer.Entries {
 				for _, tx := range e.Txns {
@@ -396,6 +400,7 @@ func run(c *cobra.Command, args []string) {
 							panic(err)
 						}
 						totalSize += uint64(len(marshaled))
+						bufTx = append(bufTx, marshaled...)
 					}
 					if len(tx.Signatures) > 0 {
 						{
@@ -432,6 +437,7 @@ func run(c *cobra.Command, args []string) {
 						atomic.AddUint64(&numFoundEmtyTxMeta, 1)
 					}
 					totalSize += uint64(len(metaBytes))
+					bufTx = append(bufTx, metaBytes...)
 					if thisSize := got[i].Size(); uint64(thisSize) > atomic.LoadUint64(&maxTxMetaSize) {
 						atomic.StoreUint64(&maxTxMetaSize, uint64(thisSize))
 						klog.Infof("new maxTxMetaSize: %s", humanize.Bytes(uint64(thisSize)))
@@ -446,8 +452,11 @@ func run(c *cobra.Command, args []string) {
 			}
 		}
 		{
+			compressed := Compress(bufTx)
+			compressedSize := uint64(len(compressed))
 			slotSizesMu.Lock()
 			slotSizes[slotMeta.Slot] = append(slotSizes[slotMeta.Slot], totalSize)
+			slotSizesCompressed[slotMeta.Slot] = append(slotSizesCompressed[slotMeta.Slot], compressedSize)
 			slotSizesMu.Unlock()
 		}
 		return true
@@ -516,18 +525,44 @@ func run(c *cobra.Command, args []string) {
 				klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
 			}
 		}
-		maxSlotSize := uint64(0)
-		for slot, sizes := range slotSizes {
-			if condition := len(sizes) > 1; condition {
-				klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
-			}
-			for _, size := range sizes {
-				if size > maxSlotSize {
-					maxSlotSize = size
+		{
+			maxSlotSize := uint64(0)
+			minSlotSize := uint64(math.MaxUint64)
+			for slot, sizes := range slotSizes {
+				if condition := len(sizes) > 1; condition {
+					klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
+				}
+				for _, size := range sizes {
+					if size > maxSlotSize {
+						maxSlotSize = size
+					}
+					if size > 0 && size < minSlotSize {
+						minSlotSize = size
+					}
 				}
 			}
+			klog.Infof("Max slot size: %d (%s)", maxSlotSize, humanize.Bytes((maxSlotSize)))
+			klog.Infof("Min slot size: %d (%s)", minSlotSize, humanize.Bytes((minSlotSize)))
 		}
-		klog.Infof("Max slot size: %d (%s)", maxSlotSize, humanize.Bytes((maxSlotSize)))
+		{
+			maxSlotSize := uint64(0)
+			minSlotSize := uint64(math.MaxUint64)
+			for slot, sizes := range slotSizesCompressed {
+				if condition := len(sizes) > 1; condition {
+					klog.Infof("slot %d has multiple compressed sizes: %v", slot, sizes)
+				}
+				for _, size := range sizes {
+					if size > maxSlotSize {
+						maxSlotSize = size
+					}
+					if size > 0 && size < minSlotSize {
+						minSlotSize = size
+					}
+				}
+			}
+			klog.Infof("Compressed Max slot size: %d (%s)", maxSlotSize, humanize.Bytes((maxSlotSize)))
+			klog.Infof("Compressed Min slot size: %d (%s)", minSlotSize, humanize.Bytes((minSlotSize)))
+		}
 	}
 	os.Exit(exitCode)
 }
