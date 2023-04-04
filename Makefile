@@ -35,6 +35,10 @@ run-full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
 	go1.19.7 run ./cmd/radiance $(ARGS)
+test-full: install_compatible_golang_version build_rocksdb
+	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
+	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
+	go1.19.7 test ./... -cover -count=1
 gen-proto:
 	protoc \
 		--experimental_allow_proto3_optional \
