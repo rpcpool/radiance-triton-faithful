@@ -61,7 +61,7 @@ func init() {
 func formatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	key := make([]byte, 80)
 	// the first 8 bytes are empty; fill them with zeroes
-	copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
+	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
 	// then comes the signature
 	copy(key[8:], sig[:])
 	// then comes the slot
@@ -85,11 +85,14 @@ func init() {
 }
 
 func run(c *cobra.Command, args []string) {
+	targetTxSignature := solana.MustSignatureFromBase58("5ottwGGNk8hPcYjgLf9EuXxy7xG48ZHvCqUaYhYbiZRs3ZPc9MxK5bccMeYf9aoQhcBup5ULqvQWgWEjvSqmesHM")
 	// {
 	// 	buf := []byte{0, 0, 0, 0, 6, 4, 180, 185}
 	// 	slot := binary.BigEndian.Uint64(buf)
 
 	// 	fmt.Println(slot)
+
+	// 	fmt.Println(bin.FormatByteSlice(formatTxMetadataKey(slot, targetTxSignature)))
 	// 	return
 	// }
 	start := time.Now()
@@ -104,6 +107,30 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("Failed to open blockstore: %s", err)
 	}
 	defer db.Close()
+
+	if false {
+		keysToBeFound := [][]byte{
+			formatTxMetadataKey(100971705, targetTxSignature),
+		}
+		got, err := db.DB.MultiGet(grocksdb.NewDefaultReadOptions(), keysToBeFound...)
+		if err != nil {
+			panic(err)
+		}
+		for i, key := range keysToBeFound {
+			fmt.Println(bin.FormatByteSlice(key))
+			if got[i] != nil {
+				fmt.Println("Found!")
+				meta, err := parseTxMeta(got[i].Data())
+				if err != nil {
+					panic(err)
+				}
+				fmt.Println(spew.Sdump(meta))
+			} else {
+				fmt.Println("Not found")
+			}
+		}
+		return
+	}
 	if false {
 		// get list of all column families
 		dbOpts := grocksdb.NewDefaultOptions()
@@ -144,8 +171,6 @@ func run(c *cobra.Command, args []string) {
 				sizePerColumnFamilyRaw := uint64(0)
 				sizePerColumnFamilyCompressed := uint64(0)
 				timeCompressionPerColumnFamily := time.Duration(0)
-
-				targetTxSignature := solana.MustSignatureFromBase58("5ottwGGNk8hPcYjgLf9EuXxy7xG48ZHvCqUaYhYbiZRs3ZPc9MxK5bccMeYf9aoQhcBup5ULqvQWgWEjvSqmesHM")
 
 				// iterate through all keys
 				iter := db.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), txStatusHandle)
@@ -353,14 +378,25 @@ func run(c *cobra.Command, args []string) {
 
 	printFirstThenStop := false
 	maxTxMetaSize := uint64(0)
-	maxTxMetaSizeMutex := &sync.Mutex{}
 	numFoundTxMeta := uint64(0)
+	numFoundEmtyTxMeta := uint64(0)
+
+	slotSizes := make(map[uint64][]uint64)
+	slotSizesMu := &sync.Mutex{}
 
 	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
+		totalSize := uint64(0)
 		keysToBeFound := make([][]byte, 0)
 		for _, outer := range entries {
 			for _, e := range outer.Entries {
 				for _, tx := range e.Txns {
+					{
+						marshaled, err := tx.MarshalBinary()
+						if err != nil {
+							panic(err)
+						}
+						totalSize += uint64(len(marshaled))
+					}
 					if len(tx.Signatures) > 0 {
 						{
 							firstSignature := tx.Signatures[0]
@@ -379,10 +415,11 @@ func run(c *cobra.Command, args []string) {
 			}
 		}
 		{
-			got, err := db.DB.MultiGet(grocksdb.NewDefaultReadOptions(), keysToBeFound...)
+			got, err := db.DB.MultiGetCF(grocksdb.NewDefaultReadOptions(), db.CfTxStatus, keysToBeFound...)
 			if err != nil {
 				panic(err)
 			}
+			defer got.Destroy()
 			{
 				for i, key := range keysToBeFound {
 					if got[i] == nil {
@@ -391,14 +428,14 @@ func run(c *cobra.Command, args []string) {
 					}
 					atomic.AddUint64(&numFoundTxMeta, 1)
 					metaBytes := got[i].Data()
-					func() {
-						maxTxMetaSizeMutex.Lock()
-						defer maxTxMetaSizeMutex.Unlock()
-						if uint64(len(metaBytes)) > (maxTxMetaSize) {
-							maxTxMetaSize = uint64(len(metaBytes))
-							klog.Infof("maxTxMetaSize: %s", humanize.Bytes(maxTxMetaSize))
-						}
-					}()
+					if got[i].Size() == 0 {
+						atomic.AddUint64(&numFoundEmtyTxMeta, 1)
+					}
+					totalSize += uint64(len(metaBytes))
+					if thisSize := got[i].Size(); uint64(thisSize) > atomic.LoadUint64(&maxTxMetaSize) {
+						atomic.StoreUint64(&maxTxMetaSize, uint64(thisSize))
+						klog.Infof("new maxTxMetaSize: %s", humanize.Bytes(uint64(thisSize)))
+					}
 					txMeta, err := parseTxMeta(metaBytes)
 					if err != nil {
 						panic(err)
@@ -407,7 +444,11 @@ func run(c *cobra.Command, args []string) {
 					txMeta.Reset()
 				}
 			}
-			got.Destroy()
+		}
+		{
+			slotSizesMu.Lock()
+			slotSizes[slotMeta.Slot] = append(slotSizes[slotMeta.Slot], totalSize)
+			slotSizesMu.Unlock()
 		}
 		return true
 	}
@@ -467,7 +508,27 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Bytes Read: %d (%.2f MB/s)", numBytes.Load(), float64(numBytes.Load())/timeTaken.Seconds()/1000000)
 	klog.Infof("Transaction Count: %d (%.2f tps)", numTxns.Load(), float64(numTxns.Load())/timeTaken.Seconds())
 	klog.Infof("Transaction Metadata Count: %d", numFoundTxMeta)
-	klog.Infof("Max tx metadata size: %d (%s)", maxTxMetaSize, humanize.Bytes(maxTxMetaSize))
+	klog.Infof("Empty Transaction Metadata Count: %d", numFoundEmtyTxMeta)
+	klog.Infof("Max tx metadata size: %d (%s)", maxTxMetaSize, humanize.Bytes((maxTxMetaSize)))
+	{
+		for slot, sizes := range slotSizes {
+			if len(sizes) > 1 {
+				klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
+			}
+		}
+		maxSlotSize := uint64(0)
+		for slot, sizes := range slotSizes {
+			if condition := len(sizes) > 1; condition {
+				klog.Infof("slot %d has multiple sizes: %v", slot, sizes)
+			}
+			for _, size := range sizes {
+				if size > maxSlotSize {
+					maxSlotSize = size
+				}
+			}
+		}
+		klog.Infof("Max slot size: %d (%s)", maxSlotSize, humanize.Bytes((maxSlotSize)))
+	}
 	os.Exit(exitCode)
 }
 
