@@ -96,6 +96,7 @@ func NewWorker(
 	epoch uint64,
 	walk blockstore.BlockWalkI,
 	requireFullEpoch bool,
+	limitSlots uint64,
 ) (*Worker, error) {
 	if err := os.Mkdir(outDir, 0o777); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
@@ -135,6 +136,15 @@ func NewWorker(
 		klog.Infof(
 			"Will process slots only in the %d epoch range [%d:%d] (discarding slots outside)",
 			epoch, officialEpochStart, officialEpochStop,
+		)
+	}
+
+	if limitSlots > 0 && limitSlots < totalSlotsToProcess {
+		totalSlotsToProcess = limitSlots
+		stopAt = haveStart + limitSlots
+		klog.Infof(
+			"Limiting slots to %d (discarding slots after %d)",
+			limitSlots, stopAt,
 		)
 	}
 

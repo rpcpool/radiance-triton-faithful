@@ -1,8 +1,8 @@
 type Block struct {
   kind      Int
   slot      Int
-  entries   [ Link ]
   shredding [ Shredding ]
+  entries   [ Link ]
 } representation tuple
 
 type Shredding struct {

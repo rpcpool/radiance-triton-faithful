@@ -58,8 +58,8 @@ type Block = *_Block
 type _Block struct {
 	kind      _Int
 	slot      _Int
-	entries   _List__Link
 	shredding _List__Shredding
+	entries   _List__Link
 }
 
 // Bool matches the IPLD Schema type "Bool".  It has bool kind.

@@ -111,6 +111,7 @@ func (b *BlockAssembler) WriteEntry(entry shred.Entry, pos EntryPos, txMetas []*
 	if err = nodeAsm.AssignNode(txList); err != nil {
 		return err
 	}
+
 	nodeAsm, err = entryMap.AssembleEntry("txMetas")
 	if err != nil {
 		return err

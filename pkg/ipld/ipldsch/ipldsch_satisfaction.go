@@ -14,11 +14,11 @@ func (n _Block) FieldKind() Int {
 func (n _Block) FieldSlot() Int {
 	return &n.slot
 }
-func (n _Block) FieldEntries() List__Link {
-	return &n.entries
-}
 func (n _Block) FieldShredding() List__Shredding {
 	return &n.shredding
+}
+func (n _Block) FieldEntries() List__Link {
+	return &n.entries
 }
 
 type _Block__Maybe struct {
@@ -58,8 +58,8 @@ func (m MaybeBlock) Must() Block {
 var (
 	fieldName__Block_Kind      = _String{"kind"}
 	fieldName__Block_Slot      = _String{"slot"}
-	fieldName__Block_Entries   = _String{"entries"}
 	fieldName__Block_Shredding = _String{"shredding"}
+	fieldName__Block_Entries   = _String{"entries"}
 )
 var _ datamodel.Node = (Block)(&_Block{})
 var _ schema.TypedNode = (Block)(&_Block{})
@@ -73,10 +73,10 @@ func (n Block) LookupByString(key string) (datamodel.Node, error) {
 		return &n.kind, nil
 	case "slot":
 		return &n.slot, nil
-	case "entries":
-		return &n.entries, nil
 	case "shredding":
 		return &n.shredding, nil
+	case "entries":
+		return &n.entries, nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
 	}
@@ -115,11 +115,11 @@ func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 		k = &fieldName__Block_Slot
 		v = &itr.n.slot
 	case 2:
-		k = &fieldName__Block_Entries
-		v = &itr.n.entries
-	case 3:
 		k = &fieldName__Block_Shredding
 		v = &itr.n.shredding
+	case 3:
+		k = &fieldName__Block_Entries
+		v = &itr.n.entries
 	default:
 		panic("unreachable")
 	}
@@ -198,8 +198,8 @@ type _Block__Assembler struct {
 	cm           schema.Maybe
 	ca_kind      _Int__Assembler
 	ca_slot      _Int__Assembler
-	ca_entries   _List__Link__Assembler
 	ca_shredding _List__Shredding__Assembler
+	ca_entries   _List__Link__Assembler
 }
 
 func (na *_Block__Assembler) reset() {
@@ -207,15 +207,15 @@ func (na *_Block__Assembler) reset() {
 	na.s = 0
 	na.ca_kind.reset()
 	na.ca_slot.reset()
-	na.ca_entries.reset()
 	na.ca_shredding.reset()
+	na.ca_entries.reset()
 }
 
 var (
 	fieldBit__Block_Kind        = 1 << 0
 	fieldBit__Block_Slot        = 1 << 1
-	fieldBit__Block_Entries     = 1 << 2
-	fieldBit__Block_Shredding   = 1 << 3
+	fieldBit__Block_Shredding   = 1 << 2
+	fieldBit__Block_Entries     = 1 << 3
 	fieldBits__Block_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3
 )
 
@@ -333,7 +333,7 @@ func (ma *_Block__Assembler) valueFinishTidy() bool {
 	case 2:
 		switch ma.cm {
 		case schema.Maybe_Value:
-			ma.ca_entries.w = nil
+			ma.ca_shredding.w = nil
 			ma.cm = schema.Maybe_Absent
 			ma.state = maState_initial
 			return true
@@ -343,7 +343,7 @@ func (ma *_Block__Assembler) valueFinishTidy() bool {
 	case 3:
 		switch ma.cm {
 		case schema.Maybe_Value:
-			ma.ca_shredding.w = nil
+			ma.ca_entries.w = nil
 			ma.cm = schema.Maybe_Absent
 			ma.state = maState_initial
 			return true
@@ -390,26 +390,26 @@ func (ma *_Block__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, e
 		ma.ca_slot.w = &ma.w.slot
 		ma.ca_slot.m = &ma.cm
 		return &ma.ca_slot, nil
-	case "entries":
-		if ma.s&fieldBit__Block_Entries != 0 {
-			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Entries}
-		}
-		ma.s += fieldBit__Block_Entries
-		ma.state = maState_midValue
-		ma.f = 2
-		ma.ca_entries.w = &ma.w.entries
-		ma.ca_entries.m = &ma.cm
-		return &ma.ca_entries, nil
 	case "shredding":
 		if ma.s&fieldBit__Block_Shredding != 0 {
 			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Shredding}
 		}
 		ma.s += fieldBit__Block_Shredding
 		ma.state = maState_midValue
-		ma.f = 3
+		ma.f = 2
 		ma.ca_shredding.w = &ma.w.shredding
 		ma.ca_shredding.m = &ma.cm
 		return &ma.ca_shredding, nil
+	case "entries":
+		if ma.s&fieldBit__Block_Entries != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Entries}
+		}
+		ma.s += fieldBit__Block_Entries
+		ma.state = maState_midValue
+		ma.f = 3
+		ma.ca_entries.w = &ma.w.entries
+		ma.ca_entries.m = &ma.cm
+		return &ma.ca_entries, nil
 	}
 	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.Block", Key: &_String{k}}
 }
@@ -455,13 +455,13 @@ func (ma *_Block__Assembler) AssembleValue() datamodel.NodeAssembler {
 		ma.ca_slot.m = &ma.cm
 		return &ma.ca_slot
 	case 2:
-		ma.ca_entries.w = &ma.w.entries
-		ma.ca_entries.m = &ma.cm
-		return &ma.ca_entries
-	case 3:
 		ma.ca_shredding.w = &ma.w.shredding
 		ma.ca_shredding.m = &ma.cm
 		return &ma.ca_shredding
+	case 3:
+		ma.ca_entries.w = &ma.w.entries
+		ma.ca_entries.m = &ma.cm
+		return &ma.ca_entries
 	default:
 		panic("unreachable")
 	}
@@ -489,11 +489,11 @@ func (ma *_Block__Assembler) Finish() error {
 		if ma.s&fieldBit__Block_Slot == 0 {
 			err.Missing = append(err.Missing, "slot")
 		}
-		if ma.s&fieldBit__Block_Entries == 0 {
-			err.Missing = append(err.Missing, "entries")
-		}
 		if ma.s&fieldBit__Block_Shredding == 0 {
 			err.Missing = append(err.Missing, "shredding")
+		}
+		if ma.s&fieldBit__Block_Entries == 0 {
+			err.Missing = append(err.Missing, "entries")
 		}
 		return err
 	}
@@ -549,19 +549,19 @@ func (ka *_Block__KeyAssembler) AssignString(k string) error {
 		ka.state = maState_expectValue
 		ka.f = 1
 		return nil
-	case "entries":
-		if ka.s&fieldBit__Block_Entries != 0 {
-			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Entries}
-		}
-		ka.s += fieldBit__Block_Entries
-		ka.state = maState_expectValue
-		ka.f = 2
-		return nil
 	case "shredding":
 		if ka.s&fieldBit__Block_Shredding != 0 {
 			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Shredding}
 		}
 		ka.s += fieldBit__Block_Shredding
+		ka.state = maState_expectValue
+		ka.f = 2
+		return nil
+	case "entries":
+		if ka.s&fieldBit__Block_Entries != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Entries}
+		}
+		ka.s += fieldBit__Block_Entries
 		ka.state = maState_expectValue
 		ka.f = 3
 		return nil
@@ -616,9 +616,9 @@ func (n *_Block__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
 	case 1:
 		return n.slot.Representation(), nil
 	case 2:
-		return n.entries.Representation(), nil
-	case 3:
 		return n.shredding.Representation(), nil
+	case 3:
+		return n.entries.Representation(), nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
 	}
@@ -655,10 +655,10 @@ func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 		v = itr.n.slot.Representation()
 	case 2:
 		idx = int64(itr.idx)
-		v = itr.n.entries.Representation()
+		v = itr.n.shredding.Representation()
 	case 3:
 		idx = int64(itr.idx)
-		v = itr.n.shredding.Representation()
+		v = itr.n.entries.Representation()
 	default:
 		panic("unreachable")
 	}
@@ -734,8 +734,8 @@ type _Block__ReprAssembler struct {
 	cm           schema.Maybe
 	ca_kind      _Int__ReprAssembler
 	ca_slot      _Int__ReprAssembler
-	ca_entries   _List__Link__ReprAssembler
 	ca_shredding _List__Shredding__ReprAssembler
+	ca_entries   _List__Link__ReprAssembler
 }
 
 func (na *_Block__ReprAssembler) reset() {
@@ -743,8 +743,8 @@ func (na *_Block__ReprAssembler) reset() {
 	na.f = 0
 	na.ca_kind.reset()
 	na.ca_slot.reset()
-	na.ca_entries.reset()
 	na.ca_shredding.reset()
+	na.ca_entries.reset()
 }
 func (_Block__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
 	return mixins.ListAssembler{TypeName: "ipldsch.Block.Repr"}.BeginMap(0)
@@ -903,13 +903,13 @@ func (la *_Block__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 		la.ca_slot.m = &la.cm
 		return &la.ca_slot
 	case 2:
-		la.ca_entries.w = &la.w.entries
-		la.ca_entries.m = &la.cm
-		return &la.ca_entries
-	case 3:
 		la.ca_shredding.w = &la.w.shredding
 		la.ca_shredding.m = &la.cm
 		return &la.ca_shredding
+	case 3:
+		la.ca_entries.w = &la.w.entries
+		la.ca_entries.m = &la.cm
+		return &la.ca_entries
 	default:
 		panic("unreachable")
 	}
