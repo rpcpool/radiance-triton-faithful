@@ -11,19 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
-	"time"
 
-	"github.com/VividCortex/ewma"
-	"github.com/dustin/go-humanize"
-	"github.com/mattn/go-isatty"
 	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 	"go.firedancer.io/radiance/pkg/blockstore"
-	"go.firedancer.io/radiance/pkg/iostats"
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
-	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -81,47 +74,9 @@ type Worker struct {
 
 	CARSize uint
 
-	statsSlotCount      uint64
 	totalSlotsToProcess uint64
 	bar                 *mpb.Bar
 	numTxns             *atomic.Uint64
-}
-
-func (w *Worker) statBlockPlusOne() {
-	if !klog.V(2).Enabled() {
-		return
-	}
-	w.statsSlotCount++
-
-	// clear
-	fmt.Fprintf(os.Stdout, "\r\033[K")
-}
-
-func getWidthIfTerminal() int {
-	if !klog.V(1).Enabled() {
-		return 0
-	}
-	if !isTerminal(os.Stdout) {
-		return 0
-	}
-	w, _, err := terminalSize()
-	if err != nil {
-		return 0
-	}
-	return w
-}
-
-func isTerminal(f *os.File) bool {
-	stat, _ := f.Stat()
-	return (stat.Mode() & os.ModeCharDevice) != 0
-}
-
-func terminalSize() (width, height int, err error) {
-	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
-		return 0, 0, err
-	}
-	return int(ws.Col), int(ws.Row), nil
 }
 
 // uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
@@ -201,83 +156,6 @@ func NewWorker(
 		totalSlotsToProcess: totalSlotsToProcess,
 	}
 	return w, nil
-}
-
-func (w *Worker) initStatsTracker(ctx context.Context) error {
-	var numTxns atomic.Uint64
-
-	txRate := ewma.NewMovingAverage(7)
-	lastStatsUpdate := time.Now()
-	var lastNumTxns uint64
-	updateEWMA := func() {
-		now := time.Now()
-		sinceLast := now.Sub(lastStatsUpdate)
-		curNumTxns := numTxns.Load()
-		increase := curNumTxns - lastNumTxns
-		iRate := float64(increase) / sinceLast.Seconds()
-		txRate.Add(iRate)
-		lastNumTxns = curNumTxns
-		lastStatsUpdate = now
-	}
-	stats := func() {
-		numBytesRead, _ := iostats.GetDiskReadBytes()
-		numBytesWritten, _ := iostats.GetDiskWriteBytes()
-
-		klog.Infof(
-			"[stats] tps=%.0f io-r=%s io-w=%s",
-			txRate.Value(),
-			humanize.Bytes(numBytesRead),
-			humanize.Bytes(numBytesWritten),
-		)
-	}
-
-	var barOutput io.Writer
-	isAtty := isatty.IsTerminal(os.Stderr.Fd())
-	if isAtty {
-		barOutput = os.Stderr
-	} else {
-		barOutput = io.Discard
-	}
-
-	progress := mpb.NewWithContext(ctx, mpb.WithOutput(barOutput))
-	bar := progress.New(int64(w.totalSlotsToProcess), mpb.BarStyle(),
-		mpb.PrependDecorators(
-			decor.Spinner(nil),
-			decor.CurrentNoUnit(" %d"),
-			decor.TotalNoUnit(" / %d slots"),
-			decor.NewPercentage(" (% d)"),
-		),
-		mpb.AppendDecorators(
-			decor.Name("eta="),
-			decor.AverageETA(decor.ET_STYLE_GO),
-		))
-
-	if isAtty {
-		klog.LogToStderr(false)
-		klog.SetOutput(progress)
-	}
-	statInterval := time.Second * 5
-	if statInterval > 0 {
-		statTicker := time.NewTicker(statInterval)
-		rateTicker := time.NewTicker(250 * time.Millisecond)
-		go func() {
-			defer statTicker.Stop()
-			defer rateTicker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-statTicker.C:
-					stats()
-				case <-rateTicker.C:
-					updateEWMA()
-				}
-			}
-		}()
-	}
-	w.bar = bar
-	w.numTxns = &numTxns
-	return nil
 }
 
 func (w *Worker) Run(ctx context.Context) error {
