@@ -11,6 +11,7 @@ import (
 type BlockWalkI interface {
 	Seek(slot uint64) (ok bool)
 	SlotsAvailable() (total uint64)
+	SlotEdges() (low, high uint64)
 	Next() (meta *SlotMeta, ok bool)
 	Close()
 

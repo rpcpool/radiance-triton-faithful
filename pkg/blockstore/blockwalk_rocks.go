@@ -65,6 +65,17 @@ func (m *BlockWalk) SlotsAvailable() (total uint64) {
 	return
 }
 
+// SlotEdges returns the lowest and highest slot numbers that are available
+// among all the databases.
+func (m *BlockWalk) SlotEdges() (low, high uint64) {
+	if len(m.handles) == 0 {
+		return 0, 0
+	}
+	low = m.handles[0].Start
+	high = m.handles[len(m.handles)-1].Stop
+	return
+}
+
 // Next seeks to the next slot.
 func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	if len(m.handles) == 0 {

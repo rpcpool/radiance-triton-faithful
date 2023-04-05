@@ -73,37 +73,79 @@ type Worker struct {
 	handle carHandle
 
 	CARSize uint
+
+	statsBlockCount uint64
+}
+
+func (w *Worker) statBlockPlusOne() {
+	w.statsBlockCount++
+	if w.statsBlockCount%100 == 0 {
+		fmt.Print(".")
+	}
+}
+
+// uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
+func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bool {
+	if r1[0] < r2[0] {
+		return r1[1] >= r2[0]
+	} else {
+		return r2[1] >= r1[0]
+	}
 }
 
 // NewWorker creates a new worker to transform an epoch from blockstore.BlockWalk into CAR files in the given dir.
 //
 // Creates the directory if it doesn't exist yet.
-func NewWorker(dir string, epoch uint64, walk blockstore.BlockWalkI) (*Worker, error) {
-	if err := os.Mkdir(dir, 0o777); err != nil && !errors.Is(err, fs.ErrExist) {
+func NewWorker(
+	outDir string,
+	epoch uint64,
+	walk blockstore.BlockWalkI,
+	requireFullEpoch bool,
+) (*Worker, error) {
+	if err := os.Mkdir(outDir, 0o777); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 
 	// Seek to epoch start and make sure we have all data
 	const epochLen = 432000
-	start := epoch * epochLen
-	stop := start + epochLen
-	if !walk.Seek(start) {
-		return nil, fmt.Errorf("slot %d not available in any DB", start)
+	officialEpochStart := epoch * epochLen
+	officialEpochStop := officialEpochStart + epochLen
+	if requireFullEpoch && !walk.Seek(officialEpochStart) {
+		return nil, fmt.Errorf("slot %d not available in any DB", officialEpochStart)
 	}
 
 	// TODO: This is not robust; if the DB starts in the middle of the epoch, the first slots are going to be skipped.
-	klog.Infof("Starting at slot %d", start)
+	klog.Infof("Starting at slot %d", officialEpochStart)
 	slotsAvailable := walk.SlotsAvailable()
-	if slotsAvailable < epochLen {
+	if requireFullEpoch && slotsAvailable < epochLen {
 		return nil, fmt.Errorf("need slots [%d:%d] (epoch %d) but only have up to %d",
-			start, stop, epoch, start+slotsAvailable)
+			officialEpochStart, officialEpochStop, epoch, officialEpochStart+slotsAvailable)
+	}
+
+	haveStart, haveStop := walk.SlotEdges()
+
+	if !requireFullEpoch {
+		klog.Infof(
+			"Not requiring full epoch; will process available slots [%d:%d] (~%d slots)",
+			haveStart, haveStop,
+			haveStop-haveStart,
+		)
+	}
+
+	if !uint64RangesHavePartialOverlapIncludingEdges(
+		[2]uint64{officialEpochStart, officialEpochStop},
+		[2]uint64{haveStart, haveStop},
+	) {
+		return nil, fmt.Errorf("no overlap between requested epoch [%d:%d] and available slots [%d:%d]",
+			officialEpochStart, officialEpochStop,
+			haveStart, haveStop)
 	}
 
 	w := &Worker{
-		dir:     dir,
+		dir:     outDir,
 		walk:    walk,
 		epoch:   epoch,
-		stop:    stop,
+		stop:    officialEpochStop,
 		CARSize: MaxCARSize,
 	}
 	return w, nil
@@ -111,6 +153,7 @@ func NewWorker(dir string, epoch uint64, walk blockstore.BlockWalkI) (*Worker, e
 
 func (w *Worker) Run(ctx context.Context) error {
 	for ctx.Err() == nil {
+		w.statBlockPlusOne()
 		next, err := w.step()
 		if err != nil {
 			return err

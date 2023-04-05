@@ -28,8 +28,9 @@ var Cmd = cobra.Command{
 var flags = Cmd.Flags()
 
 var (
-	flagOut = flags.StringP("out", "o", "", "Output directory")
-	flagDBs = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
+	flagOut              = flags.StringP("out", "o", "", "Output directory")
+	flagDBs              = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
+	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
 )
 
 func init() {
@@ -45,6 +46,7 @@ func run(c *cobra.Command, args []string) {
 	if err != nil {
 		klog.Exitf("Invalid epoch arg: %s", epochStr)
 	}
+	klog.Infof("Flags: out=%s epoch=%d require-full-epoch=%t dbs=%v", outPath, epoch, *flagRequireFullEpoch, *flagDBs)
 
 	// Open blockstores
 	dbPaths := *flagDBs
@@ -65,7 +67,7 @@ func run(c *cobra.Command, args []string) {
 	defer walker.Close()
 
 	// Create new cargen worker.
-	w, err := cargen.NewWorker(outPath, epoch, walker)
+	w, err := cargen.NewWorker(outPath, epoch, walker, *flagRequireFullEpoch)
 	if err != nil {
 		klog.Exitf("Failed to init cargen: %s", err)
 	}
