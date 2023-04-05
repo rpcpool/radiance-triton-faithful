@@ -5,7 +5,6 @@ package verifydata
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,30 +53,8 @@ var (
 	flagDumpSigs = flags.Bool("dump-sigs", false, "Print first signature of each transaction")
 )
 
-// TODO add a progress bar :3
-
 func init() {
 	Cmd.Run = run
-}
-
-func formatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
-	key := make([]byte, 80)
-	// the first 8 bytes are empty; fill them with zeroes
-	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
-	// then comes the signature
-	copy(key[8:], sig[:])
-	// then comes the slot
-	binary.BigEndian.PutUint64(key[72:], slot)
-	return key
-}
-
-func parseTxMeta(buf []byte) (*confirmed_block.TransactionStatusMeta, error) {
-	var status confirmed_block.TransactionStatusMeta
-	err := proto.Unmarshal(buf, &status)
-	if err != nil {
-		return nil, err
-	}
-	return &status, nil
 }
 
 func init() {
@@ -112,7 +89,7 @@ func run(c *cobra.Command, args []string) {
 
 	if false {
 		keysToBeFound := [][]byte{
-			formatTxMetadataKey(100971705, targetTxSignature),
+			blockstore.FormatTxMetadataKey(100971705, targetTxSignature),
 		}
 		got, err := db.DB.MultiGet(grocksdb.NewDefaultReadOptions(), keysToBeFound...)
 		if err != nil {
@@ -122,7 +99,7 @@ func run(c *cobra.Command, args []string) {
 			fmt.Println(bin.FormatByteSlice(key))
 			if got[i] != nil {
 				fmt.Println("Found!")
-				meta, err := parseTxMeta(got[i].Data())
+				meta, err := blockstore.ParseTransactionStatusMeta(got[i].Data())
 				if err != nil {
 					panic(err)
 				}
@@ -193,7 +170,7 @@ func run(c *cobra.Command, args []string) {
 						if bytes.Contains(key.Data(), targetTxSignature[:]) {
 							klog.Infof("Found target signature in key: %s ||| %s", bin.FormatByteSlice(key.Data()), bin.FormatByteSlice(targetTxSignature[:]))
 
-							status, err := parseTxMeta(value.Data())
+							status, err := blockstore.ParseTransactionStatusMeta(value.Data())
 							if err != nil {
 								panic(err)
 							}
@@ -246,7 +223,7 @@ func run(c *cobra.Command, args []string) {
 							klog.Infof(" - %q: %q", bin.FormatByteSlice(key.Data()), bin.FormatByteSlice(value.Data()))
 							spew.Dump(key.Data(), value.Data())
 
-							status, err := parseTxMeta(value.Data())
+							status, err := blockstore.ParseTransactionStatusMeta(value.Data())
 							if err != nil {
 								panic(err)
 							}
@@ -413,7 +390,7 @@ func run(c *cobra.Command, args []string) {
 								spew.Dump(slotMeta)
 								fmt.Println(firstSignature.String())
 							}
-							key := formatTxMetadataKey(slotMeta.Slot, firstSignature)
+							key := blockstore.FormatTxMetadataKey(slotMeta.Slot, firstSignature)
 							keysToBeFound = append(keysToBeFound, key)
 							if printFirstThenStop {
 								os.Exit(0)
@@ -446,7 +423,7 @@ func run(c *cobra.Command, args []string) {
 						atomic.StoreUint64(&maxTxMetaSize, uint64(thisSize))
 						klog.Infof("new maxTxMetaSize: %s", humanize.Bytes(uint64(thisSize)))
 					}
-					txMeta, err := parseTxMeta(metaBytes)
+					txMeta, err := blockstore.ParseTransactionStatusMeta(metaBytes)
 					if err != nil {
 						panic(err)
 					}

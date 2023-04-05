@@ -3,6 +3,7 @@
 package blockstore
 
 import (
+	"encoding/binary"
 	"fmt"
 
 	"github.com/gagliardetto/solana-go"
@@ -10,6 +11,17 @@ import (
 	"github.com/linxGnu/grocksdb"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 )
+
+func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+	key := make([]byte, 80)
+	// the first 8 bytes are empty; fill them with zeroes
+	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
+	// then comes the signature
+	copy(key[8:], sig[:])
+	// then comes the slot
+	binary.BigEndian.PutUint64(key[72:], slot)
+	return key
+}
 
 func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error) {
 	got, err := d.DB.MultiGetCF(grocksdb.NewDefaultReadOptions(), d.CfTxStatus, keys...)

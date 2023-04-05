@@ -4,7 +4,6 @@ package cargen
 import (
 	"bufio"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/VividCortex/ewma"
 	"github.com/dustin/go-humanize"
-	"github.com/gagliardetto/solana-go"
 	"github.com/mattn/go-isatty"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -448,22 +446,11 @@ func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]b
 		for _, entry := range batch {
 			for _, tx := range entry.Txns {
 				firstSig := tx.Signatures[0]
-				keys = append(keys, FormatTxMetadataKey(slot, firstSig))
+				keys = append(keys, blockstore.FormatTxMetadataKey(slot, firstSig))
 			}
 		}
 	}
 	return keys, nil
-}
-
-func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
-	key := make([]byte, 80)
-	// the first 8 bytes are empty; fill them with zeroes
-	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
-	// then comes the signature
-	copy(key[8:], sig[:])
-	// then comes the slot
-	binary.BigEndian.PutUint64(key[72:], slot)
-	return key
 }
 
 type carHandle struct {
