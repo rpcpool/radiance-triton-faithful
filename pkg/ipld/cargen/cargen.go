@@ -114,8 +114,6 @@ func NewWorker(
 		return nil, fmt.Errorf("slot %d not available in any DB", officialEpochStart)
 	}
 
-	// TODO: This is not robust; if the DB starts in the middle of the epoch, the first slots are going to be skipped.
-	klog.Infof("Starting at slot %d", officialEpochStart)
 	slotsAvailable := walk.SlotsAvailable()
 	if requireFullEpoch && slotsAvailable < epochLen {
 		return nil, fmt.Errorf("need slots [%d:%d] (epoch %d) but only have up to %d",
@@ -128,7 +126,14 @@ func NewWorker(
 		klog.Infof(
 			"Not requiring full epoch; will process available slots [%d:%d] (~%d slots)",
 			haveStart, haveStop,
+			// NOTE: there might be gaps in the data (as we are considering the min/max of the provided DBs),
+			// so this is not a reliable estimate.
 			haveStop-haveStart,
+		)
+	} else {
+		klog.Infof(
+			"Will process slots only in the %d epoch range [%d:%d] (discarding slots outside)",
+			epoch, officialEpochStart, officialEpochStop,
 		)
 	}
 
