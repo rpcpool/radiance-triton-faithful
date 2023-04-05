@@ -20,16 +20,37 @@ func (w *Worker) initStatsTracker(ctx context.Context) error {
 	var numTxns atomic.Uint64
 
 	txRate := ewma.NewMovingAverage(7)
-	lastStatsUpdate := time.Now()
+	discReadRate := ewma.NewMovingAverage(7)
+	discWriteRate := ewma.NewMovingAverage(7)
 	var lastNumTxns uint64
+	var lastDiscReadRate uint64
+	var lastDiscWriteRate uint64
+
+	lastStatsUpdate := time.Now()
 	updateEWMA := func() {
 		now := time.Now()
 		sinceLast := now.Sub(lastStatsUpdate)
-		curNumTxns := numTxns.Load()
-		increase := curNumTxns - lastNumTxns
-		iRate := float64(increase) / sinceLast.Seconds()
-		txRate.Add(iRate)
-		lastNumTxns = curNumTxns
+		{
+			curNumTxns := numTxns.Load()
+			increase := curNumTxns - lastNumTxns
+			iRate := float64(increase) / sinceLast.Seconds()
+			txRate.Add(iRate)
+			lastNumTxns = curNumTxns
+		}
+		{
+			curDiscReadRate, _ := iostats.GetDiskReadBytes()
+			increase := curDiscReadRate - lastDiscReadRate
+			iRate := float64(increase) / sinceLast.Seconds()
+			discReadRate.Add(iRate)
+			lastDiscReadRate = curDiscReadRate
+		}
+		{
+			curDiscWriteRate, _ := iostats.GetDiskWriteBytes()
+			increase := curDiscWriteRate - lastDiscWriteRate
+			iRate := float64(increase) / sinceLast.Seconds()
+			discWriteRate.Add(iRate)
+			lastDiscWriteRate = curDiscWriteRate
+		}
 		lastStatsUpdate = now
 	}
 	stats := func() {
@@ -37,10 +58,12 @@ func (w *Worker) initStatsTracker(ctx context.Context) error {
 		numBytesWritten, _ := iostats.GetDiskWriteBytes()
 
 		klog.Infof(
-			"[stats] tps=%.0f io-r=%s io-w=%s",
+			"[stats] tps=%.0f io-r=%s io-w=%s io-r/s=%s io-w/s=%s",
 			txRate.Value(),
-			humanize.Bytes(numBytesRead),
-			humanize.Bytes(numBytesWritten),
+			humanize.IBytes(numBytesRead),
+			humanize.IBytes(numBytesWritten),
+			humanize.IBytes(uint64(discReadRate.Value())),
+			humanize.IBytes(uint64(discWriteRate.Value())),
 		)
 	}
 
