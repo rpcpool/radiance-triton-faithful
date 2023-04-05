@@ -31,7 +31,7 @@ full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
 	go1.19.7 build ./cmd/radiance
-run-full: install_compatible_golang_version build_rocksdb
+radiance: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
 	go1.19.7 run ./cmd/radiance $(ARGS)
