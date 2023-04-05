@@ -3,7 +3,6 @@
 package verifydata
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -13,8 +12,6 @@ import (
 	"math"
 	"os"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +29,7 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"go.firedancer.io/radiance/pkg/blockstore"
+	"go.firedancer.io/radiance/pkg/iostats"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -612,7 +610,7 @@ func run(c *cobra.Command, args []string) {
 			klog.Infof("Max slot compression ratio: %.2f", max)
 			klog.Infof("Min slot compression ratio: %.2f", min)
 		}
-		numBytesReadFromDisk, err := getDiskReadBytes()
+		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
 			panic(err)
 		}
@@ -622,7 +620,7 @@ func run(c *cobra.Command, args []string) {
 			humanize.Bytes(numBytesReadFromDisk),
 			humanize.Bytes(uint64(float64(numBytesReadFromDisk)/timeTaken.Seconds())),
 		)
-		numBytesWrittenToDisk, err := getDiskWriteBytes()
+		numBytesWrittenToDisk, err := iostats.GetDiskWriteBytes()
 		if err != nil {
 			panic(err)
 		}
@@ -696,47 +694,4 @@ func (w *WriterCounter) Count() uint64 {
 		return 0
 	}
 	return *w.counter
-}
-
-// get how much this process reads from disk
-func getDiskReadBytes() (uint64, error) {
-	file, err := os.Open("/proc/self/io")
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "read_bytes:") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				return 0, fmt.Errorf("invalid read_bytes line: %s", line)
-			}
-			return strconv.ParseUint(fields[1], 10, 64)
-		}
-	}
-	return 0, fmt.Errorf("read_bytes not found")
-}
-
-func getDiskWriteBytes() (uint64, error) {
-	file, err := os.Open("/proc/self/io")
-	if err != nil {
-		return 0, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "write_bytes:") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				return 0, fmt.Errorf("invalid write_bytes line: %s", line)
-			}
-			return strconv.ParseUint(fields[1], 10, 64)
-		}
-	}
-	return 0, fmt.Errorf("write_bytes not found")
 }
