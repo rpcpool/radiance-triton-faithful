@@ -41,7 +41,6 @@ func run(c *cobra.Command, args []string) {
 	start := time.Now()
 
 	defer func() {
-		klog.Info("DONE")
 		timeTaken := time.Since(start)
 		klog.Infof("Time taken: %s", timeTaken)
 	}()
@@ -82,4 +81,5 @@ func run(c *cobra.Command, args []string) {
 	if err = w.Run(ctx); err != nil {
 		klog.Exitf("FATAL: %s", err)
 	}
+	klog.Info("DONE")
 }
