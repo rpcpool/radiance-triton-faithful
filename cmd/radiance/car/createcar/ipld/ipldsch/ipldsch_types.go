@@ -23,6 +23,8 @@ type typeSlab struct {
 	Block__Repr           _Block__ReprPrototype
 	Bool                  _Bool__Prototype
 	Bool__Repr            _Bool__ReprPrototype
+	Buffer                _Buffer__Prototype
+	Buffer__Repr          _Buffer__ReprPrototype
 	Bytes                 _Bytes__Prototype
 	Bytes__Repr           _Bytes__ReprPrototype
 	Entry                 _Entry__Prototype
@@ -41,12 +43,12 @@ type typeSlab struct {
 	List__Link__Repr      _List__Link__ReprPrototype
 	List__Shredding       _List__Shredding__Prototype
 	List__Shredding__Repr _List__Shredding__ReprPrototype
-	Range                 _Range__Prototype
-	Range__Repr           _Range__ReprPrototype
 	Shredding             _Shredding__Prototype
 	Shredding__Repr       _Shredding__ReprPrototype
 	String                _String__Prototype
 	String__Repr          _String__ReprPrototype
+	Subset                _Subset__Prototype
+	Subset__Repr          _Subset__ReprPrototype
 	Transaction           _Transaction__Prototype
 	Transaction__Repr     _Transaction__ReprPrototype
 }
@@ -66,6 +68,10 @@ type _Block struct {
 type Bool = *_Bool
 type _Bool struct{ x bool }
 
+// Buffer matches the IPLD Schema type "Buffer".  It has bytes kind.
+type Buffer = *_Buffer
+type _Buffer struct{ x []byte }
+
 // Bytes matches the IPLD Schema type "Bytes".  It has bytes kind.
 type Bytes = *_Bytes
 type _Bytes struct{ x []byte }
@@ -82,8 +88,9 @@ type _Entry struct {
 // Epoch matches the IPLD Schema type "Epoch".  It has struct type-kind, and may be interrogated like map kind.
 type Epoch = *_Epoch
 type _Epoch struct {
-	epoch  _Int
-	ranges _List__Link
+	kind    _Int
+	epoch   _Int
+	subsets _List__Link
 }
 
 // Float matches the IPLD Schema type "Float".  It has float kind.
@@ -114,14 +121,6 @@ type _List__Shredding struct {
 	x []_Shredding
 }
 
-// Range matches the IPLD Schema type "Range".  It has struct type-kind, and may be interrogated like map kind.
-type Range = *_Range
-type _Range struct {
-	first  _Int
-	last   _Int
-	blocks _List__Link
-}
-
 // Shredding matches the IPLD Schema type "Shredding".  It has struct type-kind, and may be interrogated like map kind.
 type Shredding = *_Shredding
 type _Shredding struct {
@@ -133,10 +132,19 @@ type _Shredding struct {
 type String = *_String
 type _String struct{ x string }
 
+// Subset matches the IPLD Schema type "Subset".  It has struct type-kind, and may be interrogated like map kind.
+type Subset = *_Subset
+type _Subset struct {
+	kind   _Int
+	first  _Int
+	last   _Int
+	blocks _List__Link
+}
+
 // Transaction matches the IPLD Schema type "Transaction".  It has struct type-kind, and may be interrogated like map kind.
 type Transaction = *_Transaction
 type _Transaction struct {
 	kind     _Int
-	data     _Bytes
-	metadata _Bytes
+	data     _Buffer
+	metadata _Buffer
 }

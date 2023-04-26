@@ -5,12 +5,13 @@ import "github.com/ipld/go-ipld-prime/datamodel"
 type (
 	List__Link []datamodel.Link
 	Epoch      struct {
-		Epoch  int
-		Ranges List__Link
+		Kind    int
+		Epoch   int
+		Subsets List__Link
 	}
 )
-
-type Range struct {
+type Subset struct {
+	Kind   int
 	First  int
 	Last   int
 	Blocks List__Link
@@ -24,7 +25,6 @@ type (
 		Entries   List__Link
 	}
 )
-
 type Shredding struct {
 	EntryEndIdx int
 	ShredEndIdx int

@@ -123,6 +123,8 @@ const (
 	KindTransaction = iota
 	KindEntry
 	KindBlock
+	KindSubset
+	KindEpoch
 )
 
 func (cw *StageOne) constructBlock(
@@ -226,7 +228,7 @@ func (cw *StageOne) onEntry(
 	slotMeta blockstore.SlotMeta,
 	entries []blockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
-	onEntry func(cidOfARange datamodel.Link),
+	onEntry func(cidOfAnEntry datamodel.Link),
 ) error {
 	entryNum := 0
 	txNum := 0

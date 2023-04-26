@@ -16,7 +16,7 @@ var Prototypes schemaSlab
 type schemaSlab struct {
 	List__Link      schema.TypedPrototype
 	Epoch           schema.TypedPrototype
-	Range           schema.TypedPrototype
+	Subset          schema.TypedPrototype
 	List__Shredding schema.TypedPrototype
 	Block           schema.TypedPrototype
 	Shredding       schema.TypedPrototype
@@ -42,9 +42,9 @@ func init() {
 		ts.TypeByName("Epoch"),
 	)
 
-	Prototypes.Range = bindnode.Prototype(
-		(*Range)(nil),
-		ts.TypeByName("Range"),
+	Prototypes.Subset = bindnode.Prototype(
+		(*Subset)(nil),
+		ts.TypeByName("Subset"),
 	)
 
 	Prototypes.List__Shredding = bindnode.Prototype(
