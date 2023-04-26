@@ -1,0 +1,38 @@
+type Epoch struct {
+  epoch Int
+  ranges [ Link ] # TODO: use [ &Range ] when the go generator supports it.
+} representation tuple
+
+type Range struct {
+  first  Int
+  last   Int
+  blocks [ Link ] # TODO: use [ &Block ] when the go generator supports it.
+} representation tuple
+
+type Block struct {
+  kind      Int
+  slot      Int
+  shredding [ Shredding ]
+  entries   [ Link ] # TODO: use [ &Entry ] when the go generator supports it.
+} representation tuple
+
+type Shredding struct {
+  entryEndIdx Int
+  shredEndIdx Int
+} representation tuple
+
+type Entry struct {
+  kind         Int
+  numHashes    Int
+  hash         Hash
+  transactions [ Link ] # TODO: use [ &Transaction ] when the go generator supports it.
+} representation tuple
+
+type Transaction struct {
+  kind     Int
+  data     Buffer
+  metadata Buffer
+} representation tuple
+
+type Hash bytes # these are placeholder types for now
+type Buffer bytes # these are placeholder types for now
