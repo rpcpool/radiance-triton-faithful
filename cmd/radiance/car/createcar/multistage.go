@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	carv2 "github.com/ipfs/boxo/ipld/car/v2"
@@ -14,14 +15,16 @@ import (
 	"github.com/ipld/go-ipld-prime/fluent/qp"
 	"github.com/ipld/go-ipld-prime/linking"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipld/go-ipld-prime/printer"
 	"github.com/ipld/go-ipld-prime/schema"
 	"github.com/multiformats/go-multicodec"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
-	"go.firedancer.io/radiance/pkg/blockstore"
+	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -157,8 +160,8 @@ func (cw *Multistage) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datam
 // This function creates the subgraph for the block and writes the objects to the CAR file,
 // and then registers the block CID.
 func (cw *Multistage) OnBlock(
-	slotMeta blockstore.SlotMeta,
-	entries []blockstore.Entries,
+	slotMeta radianceblockstore.SlotMeta,
+	entries []radianceblockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
 	// TODO:
@@ -178,8 +181,8 @@ func (cw *Multistage) OnBlock(
 // - [ ] in stage 2, we add the missing parts of the DAG (same CAR file)
 
 func (cw *Multistage) constructBlock(
-	slotMeta blockstore.SlotMeta,
-	entries []blockstore.Entries,
+	slotMeta radianceblockstore.SlotMeta,
+	entries []radianceblockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
 	shredding, err := cw.buildShredding(slotMeta, entries)
@@ -237,8 +240,8 @@ func (cw *Multistage) constructBlock(
 }
 
 func (cw *Multistage) buildShredding(
-	slotMeta blockstore.SlotMeta,
-	entries []blockstore.Entries,
+	slotMeta radianceblockstore.SlotMeta,
+	entries []radianceblockstore.Entries,
 ) ([]ipldbindcode.Shredding, error) {
 	entryNum := 0
 	txNum := 0
@@ -275,8 +278,8 @@ func (cw *Multistage) buildShredding(
 }
 
 func (cw *Multistage) onEntry(
-	slotMeta blockstore.SlotMeta,
-	entries []blockstore.Entries,
+	slotMeta radianceblockstore.SlotMeta,
+	entries []radianceblockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
 	onEntry func(cidOfAnEntry datamodel.Link),
 ) error {
@@ -333,7 +336,7 @@ func (cw *Multistage) onEntry(
 }
 
 func (cw *Multistage) onTx(
-	slotMeta blockstore.SlotMeta,
+	slotMeta radianceblockstore.SlotMeta,
 	entry shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 	onTx func(cidOfATx datamodel.Link),
@@ -373,4 +376,177 @@ func (cw *Multistage) onTx(
 		onTx(txLink)
 	}
 	return nil
+}
+
+// FinalizeDAG constructs the DAG for the given epoch and replaces the root of
+// the CAR file with the root of the DAG.
+func (cw *Multistage) FinalizeDAG(
+	epoch int64,
+	schedule SlotRangeSchedule,
+) (datamodel.Link, error) {
+	epochRootLink, err := cw.constructEpoch(epoch, schedule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to construct epoch: %w", err)
+	}
+
+	err = cw.Finalize()
+	if err != nil {
+		return nil, fmt.Errorf("failed to finalize writable CAR: %w", err)
+	}
+	err = cw.Close()
+	if err != nil {
+		return nil, fmt.Errorf("failed to close file: %w", err)
+	}
+
+	err = cw.replaceRoot(epochRootLink.(cidlink.Link).Cid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to replace roots in file: %w", err)
+	}
+	return epochRootLink, nil
+}
+
+func (cw *Multistage) constructEpoch(
+	epoch int64,
+	schedule SlotRangeSchedule,
+) (datamodel.Link, error) {
+	// - declare an Epoch object
+	epochNode, err := qp.BuildMap(ipldbindcode.Prototypes.Epoch, -1, func(ma datamodel.MapAssembler) {
+		qp.MapEntry(ma, "kind", qp.Int(KindEpoch))
+		qp.MapEntry(ma, "epoch", qp.Int(epoch))
+		qp.MapEntry(ma, "subsets",
+			qp.List(-1, func(la datamodel.ListAssembler) {
+				// - call onSubset() which will write the CIDs of the Subsets to the Epoch object
+				cw.onSubset(
+					schedule,
+					func(cidOfASubset datamodel.Link) {
+						qp.ListEntry(la,
+							qp.Link(cidOfASubset),
+						)
+					},
+				)
+			}),
+		)
+	})
+	if err != nil {
+		return nil, err
+	}
+	printer.Print(epochNode)
+
+	// - store the Epoch object to storage
+	epochLink, err := cw.Store(
+		linking.LinkContext{},
+		epochNode.(schema.TypedNode).Representation(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return epochLink, nil
+}
+
+func (cw *Multistage) onSubset(schedule SlotRangeSchedule, out func(datamodel.Link)) error {
+	for subsetIndex, slots := range schedule {
+		first := slots[0]
+		last := slots[len(slots)-1]
+		fmt.Println("Subset", subsetIndex, "first", first, "last", last)
+		{
+			slot2Link := make(SlotToLink)
+			// - call onSlot() which will accumulate the CIDs of the Slots (of this Range) in slotLinks
+			err := cw.onSlot(
+				slots,
+				func(slotNum uint64, cidOfASlot datamodel.Link) {
+					slot2Link[slotNum] = cidOfASlot
+				})
+			if err != nil {
+				return fmt.Errorf("error constructing slots for range %d: %w", subsetIndex, err)
+			}
+
+			// - sort the CIDs of the Slots (because they were processed in parallel)
+			slotLinks := slot2Link.GetLinksSortedBySlot()
+
+			// - declare a Subset object
+			subsetNode, err := qp.BuildMap(ipldbindcode.Prototypes.Subset, -1, func(ma datamodel.MapAssembler) {
+				qp.MapEntry(ma, "kind", qp.Int(KindSubset))
+				qp.MapEntry(ma, "first", qp.Int(int64(first)))
+				qp.MapEntry(ma, "last", qp.Int(int64(last)))
+				qp.MapEntry(ma, "blocks",
+					qp.List(-1, func(la datamodel.ListAssembler) {
+						for _, slotLink := range slotLinks {
+							qp.ListEntry(la,
+								qp.Link(slotLink),
+							)
+						}
+					}),
+				)
+			})
+			if err != nil {
+				return err
+			}
+			debugPrintNode(subsetNode)
+
+			// - store the Subset object
+			subsetLink, err := cw.Store(
+				linking.LinkContext{},
+				subsetNode.(schema.TypedNode).Representation(),
+			)
+			if err != nil {
+				return err
+			}
+			// - call out(subsetLink).
+			out(subsetLink)
+		}
+	}
+	return nil
+}
+
+func (cw *Multistage) getSettingConcurrency() int {
+	if cw.settingConcurrency > 0 {
+		return cw.settingConcurrency
+	}
+	return runtime.NumCPU()
+}
+
+func (cw *Multistage) onSlot(
+	mySlots []uint64,
+	out func(uint64, datamodel.Link),
+) error {
+	// The responsibility of sorting the CIDs of the Slots is left to the caller of this function.
+	// The use of concurrency makes the generated CAR file non-deterministic (the fragments/slots are written to it in a non-deterministic order).
+	// BUT the root CID of the CAR file is
+	// deterministic, as it is the root CID of a merkle dag.
+	// What needs to to be assured is that in any order the slots are processed, they are always sorted afterwards.
+	mu := sync.Mutex{}
+	wg := new(errgroup.Group)
+
+	// Process slots in parallel.
+	concurrency := cw.getSettingConcurrency()
+	wg.SetLimit(concurrency)
+
+	for slotI := range mySlots {
+		slot := mySlots[slotI]
+		wg.Go(func() error {
+			blockLink, err := cw.onBlock(
+				slot,
+			)
+			if err != nil {
+				return fmt.Errorf("error constructing pieces for slot %d: %w", slot, err)
+			}
+
+			mu.Lock()
+			out(slot, blockLink)
+			mu.Unlock()
+			return nil
+		})
+	}
+	return wg.Wait()
+}
+
+func (cw *Multistage) onBlock(
+	slot uint64,
+) (datamodel.Link, error) {
+	c, err := cw.reg.GetCID(slot)
+	if err != nil {
+		return nil, err
+	}
+	// return the CID as a link
+	return cidlink.Link{Cid: *c}, nil
 }
