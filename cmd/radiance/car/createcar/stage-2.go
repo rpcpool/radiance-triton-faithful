@@ -1,14 +1,16 @@
 package createcar
 
 import (
-	"crypto/rand"
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"sync"
 
 	carv2 "github.com/ipfs/boxo/ipld/car/v2"
+	"github.com/ipfs/boxo/ipld/car/v2/blockstore"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-car/v2/storage"
@@ -27,9 +29,10 @@ type StageTwo struct {
 	settingConcurrency int
 	linkSystem         linking.LinkSystem
 	linkPrototype      cidlink.LinkPrototype
+	tmpDir             string
 }
 
-func NewStageTwo() *StageTwo {
+func NewStageTwo(tmpDir string) *StageTwo {
 	lsys := cidlink.DefaultLinkSystem()
 	lp := cidlink.LinkPrototype{
 		Prefix: cid.Prefix{
@@ -43,6 +46,7 @@ func NewStageTwo() *StageTwo {
 	return &StageTwo{
 		linkSystem:    lsys,
 		linkPrototype: lp,
+		tmpDir:        tmpDir,
 	}
 }
 
@@ -266,82 +270,72 @@ func (cw *StageTwo) onSlot(
 func (cw *StageTwo) onBlock(
 	slot uint64,
 ) (datamodel.Link, error) {
-	info, pack, err := cw.readTemporaryBlockCAR(slot)
-	if err != nil {
-		return nil, fmt.Errorf("error reading package for slot %d: %w", info.Slot, err)
-	}
-	if info.Slot != slot {
-		return nil, fmt.Errorf("error reading package for slot %d: got package for slot %d instead", slot, info.Slot)
-	}
-	_ = pack
 	// TODO:
-	// - read the temporary per-block CAR file
-	// - read root CID of the CAR file (which is the CID of the Block object)
 	// - copy all all objects from temporary CAR file to the final CAR file (this).
 	// - return the root CID of the Block object.
 
-	// buf := bytes.NewReader(pack)
-	// // - split the file into fragments
-	// chunkSize := int64(chunker.ChunkSizeLimit) - 400 // TODO: set this size considering the size of the other fields in the Fragment object.
-	// ck := chunker.NewSizeSplitter(buf, chunkSize)
+	// - read the temporary per-block CAR file
+	tmpCAR, err := cw.readTemporaryBlockCAR(slot)
+	if err != nil {
+		return nil, fmt.Errorf("error reading package for slot %d: %w", slot, err)
+	}
+	defer tmpCAR.Close()
 
-	// fragmentIndex := 0
-	// for {
-	// 	fragmentBytes, err := ck.NextBytes()
-	// 	if err != nil {
-	// 		if err == io.EOF {
-	// 			break
-	// 		}
-	// 		return fmt.Errorf("error reading next fragmen %d for slot %d: %w", fragmentIndex, info.Slot, err)
-	// 	}
+	// - read root CID of the CAR file (which is the CID of the Block object)
+	roots, err := tmpCAR.Roots()
+	if err != nil {
+		return nil, fmt.Errorf("error getting roots for slot %d: %w", slot, err)
+	}
+	if len(roots) != 1 {
+		return nil, fmt.Errorf("expected 1 root for slot %d, got %d", slot, len(roots))
+	}
 
-	// 	{
-	// 		fragmentNode, err := qp.BuildMap(ipldbindcode.Prototypes.Fragment, -1, func(ma datamodel.MapAssembler) {
-	// 			qp.MapEntry(ma, "Version", qp.Int(Version))
-	// 			qp.MapEntry(ma, "Slot", qp.Int(int64(slot)))
-	// 			qp.MapEntry(ma, "Index", qp.Int(int64(fragmentIndex)))
-	// 			qp.MapEntry(ma, "Data", qp.Bytes(fragmentBytes))
-	// 			// TODO: add info (???)
-	// 		})
-	// 		if err != nil {
-	// 			return fmt.Errorf("error constructing fragment %d for slot %d: %w", fragmentIndex, info.Slot, err)
-	// 		}
-	// 		// debugNode(fragmentNode)
+	_ = tmpCAR
 
-	// 		fragmentLink, err := cw.Store(
-	// 			linking.LinkContext{},
-	// 			fragmentNode.(schema.TypedNode).Representation(),
-	// 		)
-	// 		if err != nil {
-	// 			return fmt.Errorf("error storing fragment %d for slot %d: %w", fragmentIndex, info.Slot, err)
-	// 		}
-	// 		out(fragmentLink)
-	// 	}
-	// 	fragmentIndex++
-	// }
+	// iterate over the objects in the CAR file
+	nextCID, err := tmpCAR.AllKeysChan(context.TODO())
+	if err != nil {
+		return nil, fmt.Errorf("error reading next object for slot %d: %w", slot, err)
+	}
+	for got := range nextCID {
+		// get object
+		obj, err := tmpCAR.Get(context.TODO(), got)
+		if err != nil {
+			return nil, fmt.Errorf("error getting object %s for slot %d: %w", got, slot, err)
+		}
+		// copy object to the final CAR file
+		_, err = cw.Store(
+			linking.LinkContext{},
+			obj.RawData(),
+		)
+	}
+
 	return nil, err
 }
 
-func (cw *StageTwo) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datamodel.Link, error) {
+// Store stores a given node in the underlying storage system.
+func (cw *StageTwo) Store(lnkCtx linking.LinkContext, node datamodel.Node) (datamodel.Link, error) {
 	return cw.linkSystem.Store(
 		lnkCtx,
 		cw.linkPrototype,
-		n,
+		node,
 	)
 }
 
-type PackageInfo struct {
-	Slot uint64
+// readTemporaryBlockCAR returns a compressed file (which contains transactions and tx metadata for a given slot).
+func (cw *StageTwo) readTemporaryBlockCAR(slot uint64) (*blockstore.ReadOnly, error) {
+	// TODO: implement this function.
+	carPath := formatTemporaryBlockCARPath(cw.tmpDir, slot)
+	robs, err := blockstore.OpenReadOnly(carPath,
+		blockstore.UseWholeCIDs(true),
+		carv2.ZeroLengthSectionAsEOF(true), // TODO: remove this line???
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read temporary CAR file for slot %d: %w", slot, err)
+	}
+	return robs, nil
 }
 
-// readTemporaryBlockCAR returns a compressed file (which contains transactions and tx metadata for a given slot).
-func (cw *StageTwo) readTemporaryBlockCAR(slot uint64) (PackageInfo, []byte, error) {
-	// TODO: implement this function.
-	randomPayload := make([]byte, KiB*200)
-	_, err := rand.Read(randomPayload)
-	if err != nil {
-		return PackageInfo{}, nil, err
-	}
-	return PackageInfo{Slot: slot}, randomPayload, nil
-	panic("not implemented yet")
+func formatTemporaryBlockCARPath(tmpDir string, slot uint64) string {
+	return filepath.Join(tmpDir, fmt.Sprintf("block-%d.car", slot))
 }

@@ -3,6 +3,8 @@ package createcar
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"sync"
 
 	carv2 "github.com/ipfs/boxo/ipld/car/v2"
 	"github.com/ipfs/go-cid"
@@ -15,6 +17,7 @@ import (
 	"github.com/ipld/go-ipld-prime/schema"
 	"github.com/multiformats/go-multicodec"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
+	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
@@ -22,13 +25,29 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type StageOne struct {
+const (
+	KindTransaction = iota
+	KindEntry
+	KindBlock
+	KindSubset
+	KindEpoch
+)
+
+type Multistage struct {
 	settingConcurrency int
-	linkSystem         linking.LinkSystem
-	linkPrototype      cidlink.LinkPrototype
+	carFilepath        string
+
+	linkSystem    linking.LinkSystem
+	linkPrototype cidlink.LinkPrototype
+
+	carFile    *os.File
+	storageCar *storage.StorageCar
+
+	mu  sync.Mutex
+	reg *registry.Registry
 }
 
-func NewStageOne() *StageOne {
+func NewMultistage(finalCARFilepath string) (*Multistage, error) {
 	lsys := cidlink.DefaultLinkSystem()
 	lp := cidlink.LinkPrototype{
 		Prefix: cid.Prefix{
@@ -39,17 +58,93 @@ func NewStageOne() *StageOne {
 		},
 	}
 
-	return &StageOne{
+	cw := &Multistage{
+		carFilepath:   finalCARFilepath,
 		linkSystem:    lsys,
 		linkPrototype: lp,
 	}
+	{
+		exists, err := fileExists(finalCARFilepath)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			return nil, fmt.Errorf("file %s already exists", finalCARFilepath)
+		}
+		file, err := os.Create(finalCARFilepath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file: %w", err)
+		}
+		cw.carFile = file
+
+		// make a cid with the right length that we eventually will patch with the root.
+		proxyRoot, err := cw.linkPrototype.WithCodec(uint64(multicodec.DagCbor)).Sum([]byte{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create proxy root: %w", err)
+		}
+
+		{
+			registryFilepath := filepath.Join(filepath.Dir(finalCARFilepath), "registry.bin")
+			reg, err := registry.New(registryFilepath, proxyRoot.ByteLen())
+			if err != nil {
+				return nil, fmt.Errorf("failed to create registry: %w", err)
+			}
+			cw.reg = reg
+		}
+
+		writableCar, err := storage.NewReadableWritable(
+			file,
+			[]cid.Cid{proxyRoot}, // NOTE: the root CIDs are replaced later.
+			car.UseWholeCIDs(true),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create writable CAR: %w", err)
+		}
+		cw.storageCar = writableCar
+
+		// Set the link system to use the writable CAR.
+		cw.linkSystem.SetWriteStorage(writableCar)
+		cw.linkSystem.SetReadStorage(writableCar)
+	}
+
+	return cw, nil
 }
 
-func (cw *StageOne) SetConcurrency(concurrency int) {
+func (cw *Multistage) Finalize() error {
+	if cw.carFile == nil {
+		return fmt.Errorf("car file is nil")
+	}
+	if cw.storageCar == nil {
+		return fmt.Errorf("storageCar is nil")
+	}
+	return cw.storageCar.Finalize()
+}
+
+func (cw *Multistage) Close() error {
+	if cw.carFile != nil {
+		return cw.carFile.Close()
+	}
+	return nil
+}
+
+// replaceRoot is used to replace the root CID in the CAR file.
+// This is done when we have the epoch root CID.
+func (cw *Multistage) replaceRoot(newRoot cid.Cid) error {
+	return carv2.ReplaceRootsInFile(
+		cw.carFilepath,
+		[]cid.Cid{newRoot},
+	)
+}
+
+func (cw *Multistage) SetConcurrency(concurrency int) {
 	cw.settingConcurrency = concurrency
 }
 
-func (cw *StageOne) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datamodel.Link, error) {
+func (cw *Multistage) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datamodel.Link, error) {
+	// TODO: is this safe to use concurrently?
+	cw.mu.Lock()
+	defer cw.mu.Unlock()
+
 	return cw.linkSystem.Store(
 		lnkCtx,
 		cw.linkPrototype,
@@ -57,69 +152,32 @@ func (cw *StageOne) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datamod
 	)
 }
 
-func (cw *StageOne) Build(
-	filepath string,
+// OnBlock is called when a block is received.
+// This fuction can be called concurrently.
+// This function creates the subgraph for the block and writes the objects to the CAR file,
+// and then registers the block CID.
+func (cw *Multistage) OnBlock(
 	slotMeta blockstore.SlotMeta,
 	entries []blockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
-	exists, err := fileExists(filepath)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, fmt.Errorf("file %s already exists", filepath)
-	}
-	file, err := os.Create(filepath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create file: %w", err)
-	}
-	defer file.Close()
-
-	// make a cid with the right length that we eventually will patch with the root.
-	proxyRoot, err := cw.linkPrototype.WithCodec(uint64(multicodec.DagCbor)).Sum([]byte{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create proxy root: %w", err)
-	}
-
-	writableCar, err := storage.NewReadableWritable(
-		file,
-		[]cid.Cid{proxyRoot}, // NOTE: the root CIDs are replaced later.
-		car.UseWholeCIDs(true),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create writable CAR: %w", err)
-	}
-
-	// Set the link system to use the writable CAR.
-	cw.linkSystem.SetWriteStorage(writableCar)
-	cw.linkSystem.SetReadStorage(writableCar)
-
+	// TODO:
+	// - [ ] construct the block
+	// - [ ] register the block CID
 	blockRootLink, err := cw.constructBlock(slotMeta, entries, metas)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
-
-	err = writableCar.Finalize()
-	if err != nil {
-		return nil, fmt.Errorf("failed to finalize writable CAR: %w", err)
-	}
-	err = file.Close()
-	if err != nil {
-		return nil, fmt.Errorf("failed to close file: %w", err)
-	}
-
-	err = carv2.ReplaceRootsInFile(
-		filepath,
-		[]cid.Cid{blockRootLink.(cidlink.Link).Cid}, // Use the epoch CID as the root CID.
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to replace roots in file: %w", err)
-	}
-	return blockRootLink, nil
+	return blockRootLink, cw.reg.SetCID(slotMeta.Slot, blockRootLink.(cidlink.Link).Cid.Bytes())
 }
 
-func (cw *StageOne) constructBlock(
+// TODO:
+// - [ ] in stage 1, we create a CAR file for all the slots
+// - there's a registry of all slots that have been written, and their CIDs (very important)
+// - write is protected by a mutex
+// - [ ] in stage 2, we add the missing parts of the DAG (same CAR file)
+
+func (cw *Multistage) constructBlock(
 	slotMeta blockstore.SlotMeta,
 	entries []blockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
@@ -178,7 +236,7 @@ func (cw *StageOne) constructBlock(
 	return blockLink, nil
 }
 
-func (cw *StageOne) buildShredding(
+func (cw *Multistage) buildShredding(
 	slotMeta blockstore.SlotMeta,
 	entries []blockstore.Entries,
 ) ([]ipldbindcode.Shredding, error) {
@@ -216,7 +274,7 @@ func (cw *StageOne) buildShredding(
 	return out, nil
 }
 
-func (cw *StageOne) onEntry(
+func (cw *Multistage) onEntry(
 	slotMeta blockstore.SlotMeta,
 	entries []blockstore.Entries,
 	metas []*confirmed_block.TransactionStatusMeta,
@@ -274,7 +332,7 @@ func (cw *StageOne) onEntry(
 	return nil
 }
 
-func (cw *StageOne) onTx(
+func (cw *Multistage) onTx(
 	slotMeta blockstore.SlotMeta,
 	entry shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
