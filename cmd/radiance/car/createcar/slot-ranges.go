@@ -18,6 +18,9 @@ func SplitSlotsIntoRanges(maxRangeLen int, slots []uint64) SlotRangeSchedule {
 		return slots[i] < slots[j]
 	})
 
+	// deduplicate the slots
+	slots = deduplicateUint64Slice(slots)
+
 	if len(slots) <= maxRangeLen {
 		return SlotRangeSchedule{slots}
 	}
@@ -33,4 +36,21 @@ func SplitSlotsIntoRanges(maxRangeLen int, slots []uint64) SlotRangeSchedule {
 	}
 	// return the ranges
 	return ranges
+}
+
+func deduplicateUint64Slice(s []uint64) []uint64 {
+	if len(s) == 0 {
+		return s
+	}
+	sort.Slice(s, func(i, j int) bool {
+		return s[i] < s[j]
+	})
+	var deduped []uint64
+	deduped = append(deduped, s[0])
+	for i := 1; i < len(s); i++ {
+		if s[i] != s[i-1] {
+			deduped = append(deduped, s[i])
+		}
+	}
+	return deduped
 }

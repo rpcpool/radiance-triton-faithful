@@ -22,6 +22,7 @@ import (
 	"github.com/vbauerster/mpb/v8/decor"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
+	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
@@ -168,6 +169,12 @@ func run(c *cobra.Command, args []string) {
 	numFoundTxMeta := uint64(0)
 	numFoundEmtyTxMeta := uint64(0)
 
+	finalCARFilepath := "./final.car" // TODO: make this configurable
+	multi, err := NewMultistage(finalCARFilepath)
+	if err != nil {
+		panic(err)
+	}
+
 	// TODO:
 	// - create a slot tracker
 	// - iterate over all slots in the DB, and
@@ -200,6 +207,7 @@ func run(c *cobra.Command, args []string) {
 				panic(err)
 			}
 			defer got.Destroy()
+			txMetas := make([]*confirmed_block.TransactionStatusMeta, len(keysToBeFound))
 			{
 				for i, key := range keysToBeFound {
 					if got[i] == nil {
@@ -219,10 +227,14 @@ func run(c *cobra.Command, args []string) {
 						panic(err)
 					}
 					{
-						// TODO: use txMeta
+						txMetas[i] = txMeta
 					}
-					txMeta.Reset()
+					// txMeta.Reset()
 				}
+			}
+			_, err = multi.OnBlock(slotMeta, entries, txMetas)
+			if err != nil {
+				panic(err)
 			}
 		}
 		return true
@@ -274,6 +286,18 @@ func run(c *cobra.Command, args []string) {
 	} else {
 		klog.Infof("Aborted: %s", err)
 		exitCode = 1
+	}
+
+	numEpoch := int64(123) // TODO: make this configurable
+	if exitCode == 0 {
+		klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", numEpoch, finalCARFilepath)
+		epochCID, err := multi.FinalizeDAG(numEpoch)
+		if err != nil {
+			panic(err)
+		}
+		klog.Infof("Root of the DAG (epoch CID): %s", epochCID)
+	} else {
+		klog.Infof("Encountered errors, not finalizing DAG in CAR file")
 	}
 
 	stats()

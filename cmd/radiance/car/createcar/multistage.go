@@ -113,7 +113,7 @@ func NewMultistage(finalCARFilepath string) (*Multistage, error) {
 	return cw, nil
 }
 
-func (cw *Multistage) Finalize() error {
+func (cw *Multistage) finalizeCAR() error {
 	if cw.carFile == nil {
 		return fmt.Errorf("car file is nil")
 	}
@@ -381,17 +381,32 @@ func (cw *Multistage) onTx(
 }
 
 // FinalizeDAG constructs the DAG for the given epoch and replaces the root of
-// the CAR file with the root of the DAG.
+// the CAR file with the root of the DAG (the Epoch object CID).
 func (cw *Multistage) FinalizeDAG(
 	epoch int64,
-	schedule SlotRangeSchedule,
 ) (datamodel.Link, error) {
+	allRegistered, err := cw.reg.GetAll()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get all links: %w", err)
+	}
+	allSlots := make([]uint64, 0, len(allRegistered))
+	for _, slot := range allRegistered {
+		if slot.CID == nil || len(slot.CID) == 0 || slot.Slot == 0 || !slot.Status.Is(registry.SlotStatusIncluded) {
+			continue
+		}
+		allSlots = append(allSlots, slot.Slot)
+	}
+
+	numSlotsPerSubset := 432000 / 18 // TODO: make this configurable
+
+	schedule := SplitSlotsIntoRanges(numSlotsPerSubset, allSlots)
+
 	epochRootLink, err := cw.constructEpoch(epoch, schedule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
 
-	err = cw.Finalize()
+	err = cw.finalizeCAR()
 	if err != nil {
 		return nil, fmt.Errorf("failed to finalize writable CAR: %w", err)
 	}
