@@ -189,6 +189,18 @@ func (cw *Multistage) constructBlock(
 	if err != nil {
 		return nil, fmt.Errorf("failed to build shredding: %w", err)
 	}
+	entryLinks := make([]datamodel.Link, 0)
+	err = cw.onEntry(
+		slotMeta,
+		entries,
+		metas,
+		func(cidOfAnEntry datamodel.Link) {
+			entryLinks = append(entryLinks, cidOfAnEntry)
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process entries: %w", err)
+	}
 	blockNode, err := qp.BuildMap(ipldbindcode.Prototypes.Block, -1, func(ma datamodel.MapAssembler) {
 		qp.MapEntry(ma, "kind", qp.Int(KindBlock))
 		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
@@ -207,18 +219,8 @@ func (cw *Multistage) constructBlock(
 		qp.MapEntry(ma, "entries",
 			qp.List(-1, func(la datamodel.ListAssembler) {
 				// - call onEntry() which will write the CIDs of the Entries to the Block object
-				err := cw.onEntry(
-					slotMeta,
-					entries,
-					metas,
-					func(cidOfAnEntry datamodel.Link) {
-						qp.ListEntry(la,
-							qp.Link(cidOfAnEntry),
-						)
-					},
-				)
-				if err != nil {
-					panic(err)
+				for _, entryLink := range entryLinks {
+					qp.ListEntry(la, qp.Link(entryLink))
 				}
 			}),
 		)
