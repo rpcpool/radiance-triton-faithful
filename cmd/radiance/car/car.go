@@ -5,6 +5,7 @@ package car
 import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/cmd/radiance/car/create"
+	"go.firedancer.io/radiance/cmd/radiance/car/createcar"
 	"go.firedancer.io/radiance/cmd/radiance/car/dump"
 )
 
@@ -18,5 +19,6 @@ func init() {
 	Cmd.AddCommand(
 		&create.Cmd,
 		&dump.Cmd,
+		&createcar.Cmd,
 	)
 }

@@ -26,6 +26,7 @@ import (
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -160,8 +161,8 @@ func (cw *Multistage) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datam
 // This function creates the subgraph for the block and writes the objects to the CAR file,
 // and then registers the block CID.
 func (cw *Multistage) OnBlock(
-	slotMeta radianceblockstore.SlotMeta,
-	entries []radianceblockstore.Entries,
+	slotMeta *radianceblockstore.SlotMeta,
+	entries [][]shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
 	// TODO:
@@ -181,8 +182,8 @@ func (cw *Multistage) OnBlock(
 // - [ ] in stage 2, we add the missing parts of the DAG (same CAR file)
 
 func (cw *Multistage) constructBlock(
-	slotMeta radianceblockstore.SlotMeta,
-	entries []radianceblockstore.Entries,
+	slotMeta *radianceblockstore.SlotMeta,
+	entries [][]shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
 	shredding, err := cw.buildShredding(slotMeta, entries)
@@ -242,14 +243,14 @@ func (cw *Multistage) constructBlock(
 }
 
 func (cw *Multistage) buildShredding(
-	slotMeta radianceblockstore.SlotMeta,
-	entries []radianceblockstore.Entries,
+	slotMeta *radianceblockstore.SlotMeta,
+	entries [][]shred.Entry,
 ) ([]ipldbindcode.Shredding, error) {
 	entryNum := 0
 	txNum := 0
 	out := make([]ipldbindcode.Shredding, 0)
 	for i, batch := range entries {
-		for j, entry := range batch.Entries {
+		for j, entry := range batch {
 
 			pos := ipldgen.EntryPos{
 				Slot:       slotMeta.Slot,
@@ -258,7 +259,7 @@ func (cw *Multistage) buildShredding(
 				BatchIndex: j,
 				LastShred:  -1,
 			}
-			if j == len(batch.Entries)-1 {
+			if j == len(batch)-1 {
 				// We map "last shred of batch" to each "last entry of batch"
 				// so we can reconstruct the shred/entry-batch assignments.
 				if i >= len(slotMeta.EntryEndIndexes) {
@@ -280,15 +281,15 @@ func (cw *Multistage) buildShredding(
 }
 
 func (cw *Multistage) onEntry(
-	slotMeta radianceblockstore.SlotMeta,
-	entries []radianceblockstore.Entries,
+	slotMeta *radianceblockstore.SlotMeta,
+	entries [][]shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 	onEntry func(cidOfAnEntry datamodel.Link),
 ) error {
 	entryNum := 0
 	txNum := 0
 	for _, batch := range entries {
-		for _, entry := range batch.Entries {
+		for _, entry := range batch {
 
 			// TODO: is this correct?
 			transactionMetas := metas[txNum : txNum+len(entry.Txns)]
@@ -338,7 +339,7 @@ func (cw *Multistage) onEntry(
 }
 
 func (cw *Multistage) onTx(
-	slotMeta radianceblockstore.SlotMeta,
+	slotMeta *radianceblockstore.SlotMeta,
 	entry shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 	onTx func(cidOfATx datamodel.Link),
@@ -383,7 +384,7 @@ func (cw *Multistage) onTx(
 // FinalizeDAG constructs the DAG for the given epoch and replaces the root of
 // the CAR file with the root of the DAG (the Epoch object CID).
 func (cw *Multistage) FinalizeDAG(
-	epoch int64,
+	epoch uint64,
 ) (datamodel.Link, error) {
 	allRegistered, err := cw.reg.GetAll()
 	if err != nil {
@@ -396,40 +397,50 @@ func (cw *Multistage) FinalizeDAG(
 		}
 		allSlots = append(allSlots, slot.Slot)
 	}
+	klog.Infof("Got list of %d slots", len(allSlots))
 
 	numSlotsPerSubset := 432000 / 18 // TODO: make this configurable
 
 	schedule := SplitSlotsIntoRanges(numSlotsPerSubset, allSlots)
 
+	klog.Infof("Completing DAG for epoch %d...", epoch)
 	epochRootLink, err := cw.constructEpoch(epoch, schedule)
 	if err != nil {
 		return nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
+	klog.Infof("Completed DAG for epoch %d", epoch)
 
+	klog.Infof("Finalizing CAR for epoch %d...", epoch)
 	err = cw.finalizeCAR()
 	if err != nil {
 		return nil, fmt.Errorf("failed to finalize writable CAR: %w", err)
 	}
+	klog.Infof("Finalized CAR for epoch %d; closing...", epoch)
 	err = cw.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to close file: %w", err)
 	}
+	klog.Infof("Closed CAR for epoch %d", epoch)
 
+	klog.Infof("Replacing roots in CAR for epoch %d", epoch)
 	err = cw.replaceRoot(epochRootLink.(cidlink.Link).Cid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to replace roots in file: %w", err)
 	}
+	klog.Infof("Replaced roots in CAR for epoch %d", epoch)
+
+	cw.reg.Destroy()
 	return epochRootLink, nil
 }
 
 func (cw *Multistage) constructEpoch(
-	epoch int64,
+	epoch uint64,
 	schedule SlotRangeSchedule,
 ) (datamodel.Link, error) {
 	// - declare an Epoch object
 	epochNode, err := qp.BuildMap(ipldbindcode.Prototypes.Epoch, -1, func(ma datamodel.MapAssembler) {
 		qp.MapEntry(ma, "kind", qp.Int(KindEpoch))
-		qp.MapEntry(ma, "epoch", qp.Int(epoch))
+		qp.MapEntry(ma, "epoch", qp.Int(int64(epoch)))
 		qp.MapEntry(ma, "subsets",
 			qp.List(-1, func(la datamodel.ListAssembler) {
 				// - call onSubset() which will write the CIDs of the Subsets to the Epoch object
@@ -464,7 +475,7 @@ func (cw *Multistage) onSubset(schedule SlotRangeSchedule, out func(datamodel.Li
 	for subsetIndex, slots := range schedule {
 		first := slots[0]
 		last := slots[len(slots)-1]
-		fmt.Println("Subset", subsetIndex, "first", first, "last", last)
+		klog.Infof("Subset %d: first %d, last %d", subsetIndex, first, last)
 		{
 			slot2Link := make(SlotToLink)
 			// - call onSlot() which will accumulate the CIDs of the Slots (of this Range) in slotLinks

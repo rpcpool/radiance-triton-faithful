@@ -3,47 +3,43 @@
 package createcar
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"os"
+	"path/filepath"
 	"runtime"
-	"sync/atomic"
+	"strconv"
 	"time"
 
-	"github.com/VividCortex/ewma"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
 	"github.com/klauspost/compress/zstd"
 	"github.com/linxGnu/grocksdb"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
-	"github.com/vbauerster/mpb/v8"
-	"github.com/vbauerster/mpb/v8/decor"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
+	"go.firedancer.io/radiance/pkg/shred"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
 var Cmd = cobra.Command{
-	Use:   "verify-data <rocksdb>",
-	Short: "Verify ledger data integrity",
-	Long: "Iterates through all data shreds and performs sanity checks.\n" +
-		"Useful for checking the correctness of the Radiance implementation.\n" +
+	Use:   "create2 <epoch>",
+	Short: "Create CAR file from blockstore",
+	Long: "Extracts Solana ledger data from blockstore (RocksDB) databases,\n" +
+		"and outputs one IPLD CAR (content-addressable archives).\n" +
 		"\n" +
-		"Scans through the data-shreds column family with multiple threads (divide-and-conquer).",
+		"The DAG contained in the CAR is deterministic.",
 	Args: cobra.ExactArgs(1),
 }
 
 var flags = Cmd.Flags()
 
 var (
-	flagWorkers  = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of goroutines to verify with")
-	flagMaxErrs  = flags.Uint32("max-errors", 100, "Abort after N errors")
-	flagStatIvl  = flags.Duration("stat-interval", 5*time.Second, "Stats interval")
-	flagDumpSigs = flags.Bool("dump-sigs", false, "Print first signature of each transaction")
+	flagWorkers          = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of goroutines to verify with")
+	flagOut              = flags.StringP("out", "o", "", "Output directory")
+	flagDBs              = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
+	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
+	flagLimitSlots       = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
 )
 
 func init() {
@@ -59,117 +55,48 @@ func init() {
 func run(c *cobra.Command, args []string) {
 	start := time.Now()
 
+	defer func() {
+		timeTaken := time.Since(start)
+		klog.Infof("Time taken: %s", timeTaken)
+	}()
 	workers := *flagWorkers
 	if workers == 0 {
 		workers = uint(runtime.NumCPU())
 	}
-	rocksDB := args[0]
-	db, err := blockstore.OpenReadOnly(rocksDB)
+
+	finalCARFilepath := filepath.Clean(*flagOut)
+	epochStr := args[0]
+	epoch, err := strconv.ParseUint(epochStr, 10, 32)
 	if err != nil {
-		klog.Exitf("Failed to open blockstore: %s", err)
+		klog.Exitf("Invalid epoch arg: %s", epochStr)
 	}
-	defer db.Close()
+	klog.Infof(
+		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v",
+		finalCARFilepath,
+		epoch,
+		*flagRequireFullEpoch,
+		*flagLimitSlots,
+		*flagDBs,
+	)
 
-	// total amount of slots
-	slotLo, slotHi, ok := slotBounds(db)
-	if !ok {
-		klog.Exitf("Cannot find slot boundaries")
-	}
-	if slotLo > slotHi {
-		panic("wtf: slotLo > slotHi")
-	}
-	total := slotHi - slotLo
-	klog.Infof("Verifying %d slots", total)
-
-	// per-worker amount of slots
-	step := total / uint64(workers)
-	if step == 0 {
-		step = 1
-	}
-	cursor := slotLo
-	klog.Infof("Slots per worker: %d", step)
-
-	// stats trackers
-	var numSuccess atomic.Uint64
-	var numSkipped atomic.Uint64
-	var numFailure atomic.Uint32
-	var numTxns atomic.Uint64
-
-	// application lifetime
-	rootCtx := c.Context()
-	ctx, cancel := context.WithCancel(rootCtx)
-	defer cancel()
-	group, ctx := errgroup.WithContext(ctx)
-
-	txRate := ewma.NewMovingAverage(7)
-	lastStatsUpdate := time.Now()
-	var lastNumTxns uint64
-	updateEWMA := func() {
-		now := time.Now()
-		sinceLast := now.Sub(lastStatsUpdate)
-		curNumTxns := numTxns.Load()
-		increase := curNumTxns - lastNumTxns
-		iRate := float64(increase) / sinceLast.Seconds()
-		txRate.Add(iRate)
-		lastNumTxns = curNumTxns
-		lastStatsUpdate = now
-	}
-	stats := func() {
-		klog.Infof("[stats] good=%d skipped=%d bad=%d tps=%.0f",
-			numSuccess.Load(), numSkipped.Load(), numFailure.Load(), txRate.Value())
+	// Open blockstores
+	dbPaths := *flagDBs
+	handles := make([]blockstore.WalkHandle, len(*flagDBs))
+	for i := range handles {
+		var err error
+		handles[i].DB, err = blockstore.OpenReadOnly(dbPaths[i])
+		if err != nil {
+			klog.Exitf("Failed to open blockstore at %s: %s", dbPaths[i], err)
+		}
 	}
 
-	var barOutput io.Writer
-	isAtty := isatty.IsTerminal(os.Stderr.Fd())
-	if isAtty {
-		barOutput = os.Stderr
-	} else {
-		barOutput = io.Discard
+	// Create new walker object
+	walker, err := blockstore.NewBlockWalk(handles, 2 /*TODO*/)
+	if err != nil {
+		klog.Exitf("Failed to create multi-DB iterator: %s", err)
 	}
+	defer walker.Close()
 
-	progress := mpb.NewWithContext(ctx, mpb.WithOutput(barOutput))
-	bar := progress.New(int64(total), mpb.BarStyle(),
-		mpb.PrependDecorators(
-			decor.Spinner(nil),
-			decor.CurrentNoUnit(" %d"),
-			decor.TotalNoUnit(" / %d slots"),
-			decor.NewPercentage(" (% d)"),
-		),
-		mpb.AppendDecorators(
-			decor.Name("eta="),
-			decor.AverageETA(decor.ET_STYLE_GO),
-		))
-
-	if isAtty {
-		klog.LogToStderr(false)
-		klog.SetOutput(progress)
-	}
-
-	statInterval := *flagStatIvl
-	if statInterval > 0 {
-		statTicker := time.NewTicker(statInterval)
-		rateTicker := time.NewTicker(250 * time.Millisecond)
-		go func() {
-			defer statTicker.Stop()
-			defer rateTicker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-statTicker.C:
-					stats()
-				case <-rateTicker.C:
-					updateEWMA()
-				}
-			}
-		}()
-	}
-
-	maxTxMetaSize := uint64(0)
-	numFoundTxMeta := uint64(0)
-	numFoundEmtyTxMeta := uint64(0)
-
-	finalCARFilepath := "./final.car" // TODO: make this configurable
 	multi, err := NewMultistage(finalCARFilepath)
 	if err != nil {
 		panic(err)
@@ -185,128 +112,39 @@ func run(c *cobra.Command, args []string) {
 	// - if yes, then:
 	//   - create a new CAR file for the entire DB
 	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
-	callback := func(slotMeta blockstore.SlotMeta, entries []blockstore.Entries) bool {
-		keysToBeFound := make([][]byte, 0)
-
-		for _, outer := range entries {
-			for _, e := range outer.Entries {
-				for _, tx := range e.Txns {
-					if len(tx.Signatures) > 0 {
-						{
-							firstSignature := tx.Signatures[0]
-							key := blockstore.FormatTxMetadataKey(slotMeta.Slot, firstSignature)
-							keysToBeFound = append(keysToBeFound, key)
-						}
-					}
-				}
-			}
-		}
-		{
-			got, err := db.DB.MultiGetCF(grocksdb.NewDefaultReadOptions(), db.CfTxStatus, keysToBeFound...)
-			if err != nil {
-				panic(err)
-			}
-			defer got.Destroy()
-			txMetas := make([]*confirmed_block.TransactionStatusMeta, len(keysToBeFound))
-			{
-				for i, key := range keysToBeFound {
-					if got[i] == nil {
-						panic(fmt.Errorf("tx meta not found for key: %x", key))
-					}
-					atomic.AddUint64(&numFoundTxMeta, 1)
-					metaBytes := got[i].Data()
-					if got[i].Size() == 0 {
-						atomic.AddUint64(&numFoundEmtyTxMeta, 1)
-					}
-					if thisSize := got[i].Size(); uint64(thisSize) > atomic.LoadUint64(&maxTxMetaSize) {
-						atomic.StoreUint64(&maxTxMetaSize, uint64(thisSize))
-						klog.Infof("new maxTxMetaSize: %s", humanize.Bytes(uint64(thisSize)))
-					}
-					txMeta, err := blockstore.ParseTransactionStatusMeta(metaBytes)
-					if err != nil {
-						panic(err)
-					}
-					{
-						txMetas[i] = txMeta
-					}
-					// txMeta.Reset()
-				}
-			}
-			_, err = multi.OnBlock(slotMeta, entries, txMetas)
-			if err != nil {
-				panic(err)
-			}
-		}
-		return true
-	}
-
-	for i := uint(0); i < workers; i++ {
-		// Find segment assigned to worker
-		wLo := cursor
-		wHi := wLo + step
-		if wHi > slotHi || i == workers-1 {
-			wHi = slotHi
-		}
-		cursor = wHi
-		if wLo >= wHi {
-			break
-		}
-
-		klog.Infof("[worker %d]: range=[%d:%d]", i, wLo, wHi)
-		w := &worker{
-			id:          i,
-			bar:         bar,
-			stop:        wHi,
-			numSuccess:  &numSuccess,
-			numSkipped:  &numSkipped,
-			numFailures: &numFailure,
-			maxFailures: *flagMaxErrs,
-			numTxns:     &numTxns,
-		}
-		w.init(db, wLo)
-		group.Go(func() error {
-			defer w.close()
-			return w.run(ctx, callback)
-		})
-	}
-
-	err = group.Wait()
-	if isAtty {
-		klog.Flush()
-		klog.SetOutput(os.Stderr)
-	}
-
-	var exitCode int
-	if err != nil {
-		klog.Errorf("Aborting: %s", err)
-		exitCode = 1
-	} else if err = rootCtx.Err(); err == nil {
-		klog.Info("Done!")
-		exitCode = 0
-	} else {
-		klog.Infof("Aborted: %s", err)
-		exitCode = 1
-	}
-
-	numEpoch := int64(123) // TODO: make this configurable
-	if exitCode == 0 {
-		klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", numEpoch, finalCARFilepath)
-		epochCID, err := multi.FinalizeDAG(numEpoch)
+	callback := func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error {
+		_, err = multi.OnBlock(slotMeta, entries, txMetas)
 		if err != nil {
-			panic(err)
+			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 		}
-		klog.Infof("Root of the DAG (epoch CID): %s", epochCID)
-	} else {
-		klog.Infof("Encountered errors, not finalizing DAG in CAR file")
+		return nil
+	}
+	// Create new cargen worker.
+	w, err := NewIterator(
+		epoch,
+		walker,
+		*flagRequireFullEpoch,
+		*flagLimitSlots,
+		callback,
+	)
+	if err != nil {
+		klog.Exitf("Failed to init cargen: %s", err)
 	}
 
-	stats()
+	ctx := c.Context()
+	if err = w.Run(ctx); err != nil {
+		klog.Exitf("FATAL: %s", err)
+	}
+	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
+	epochCID, err := multi.FinalizeDAG(epoch)
+	if err != nil {
+		panic(err)
+	}
+	klog.Infof("Root of the DAG (epoch CID): %s", epochCID)
+	klog.Info("DONE")
+
 	timeTaken := time.Since(start)
 	klog.Infof("Time taken: %s", timeTaken)
-	klog.Infof("Transaction Count: %d (%.2f tps)", numTxns.Load(), float64(numTxns.Load())/timeTaken.Seconds())
-	klog.Infof("Transaction Metadata Count: %d", numFoundTxMeta)
-	klog.Infof("Empty Transaction Metadata Count: %d", numFoundEmtyTxMeta)
-	klog.Infof("Max tx metadata size: %d (%s)", maxTxMetaSize, humanize.Bytes((maxTxMetaSize)))
 	{
 		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
@@ -329,7 +167,8 @@ func run(c *cobra.Command, args []string) {
 			humanize.Bytes(uint64(float64(numBytesWrittenToDisk)/timeTaken.Seconds())),
 		)
 	}
-	os.Exit(exitCode)
+	time.Sleep(1 * time.Second)
+	os.Exit(0)
 }
 
 // slotBounds returns the lowest and highest available slots in the meta table.

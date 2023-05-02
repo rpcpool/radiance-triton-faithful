@@ -18,6 +18,7 @@ type Registry struct {
 	knownOffsets  map[uint64]int64
 	mu            sync.RWMutex
 	fileLen       int
+	path          string
 }
 
 type storageInterface interface {
@@ -33,9 +34,17 @@ func New(filepath string, cidByteLength int) (*Registry, error) {
 	if ok, err := fileExists(filepath); err != nil {
 		return nil, err
 	} else if ok {
-		return openFromExistingFile(filepath, cidByteLength)
+		r, err := openFromExistingFile(filepath, cidByteLength)
+		if r != nil {
+			r.path = filepath
+		}
+		return r, err
 	} else {
-		return createNewRegistry(filepath, cidByteLength)
+		r, err := createNewRegistry(filepath, cidByteLength)
+		if r != nil {
+			r.path = filepath
+		}
+		return r, err
 	}
 }
 
@@ -170,6 +179,23 @@ func (r *Registry) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.file.Close()
+}
+
+func (r *Registry) Destroy() error {
+	err := r.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close file: %w", err)
+	}
+	return r.Remove()
+}
+
+func (r *Registry) Remove() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.path == "" {
+		return nil
+	}
+	return os.Remove(r.path)
 }
 
 func (r *Registry) Len() int {
