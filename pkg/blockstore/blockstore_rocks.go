@@ -13,13 +13,12 @@ import (
 type DB struct {
 	DB *grocksdb.DB
 
-	CfDefault       *grocksdb.ColumnFamilyHandle
-	CfMeta          *grocksdb.ColumnFamilyHandle
-	CfRoot          *grocksdb.ColumnFamilyHandle
-	CfDataShred     *grocksdb.ColumnFamilyHandle
-	CfCodeShred     *grocksdb.ColumnFamilyHandle
-	CfTxStatus      *grocksdb.ColumnFamilyHandle
-	CfTxStatusIndex *grocksdb.ColumnFamilyHandle
+	CfDefault   *grocksdb.ColumnFamilyHandle
+	CfMeta      *grocksdb.ColumnFamilyHandle
+	CfRoot      *grocksdb.ColumnFamilyHandle
+	CfDataShred *grocksdb.ColumnFamilyHandle
+	CfCodeShred *grocksdb.ColumnFamilyHandle
+	CfTxStatus  *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -117,9 +116,6 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if db.CfTxStatus == nil {
 		return nil, errors.New("missing column family " + CfTxStatus)
 	}
-	if db.CfTxStatusIndex == nil {
-		return nil, errors.New("missing column family " + CfTxStatusIndex)
-	}
 
 	return db, nil
 }
@@ -138,8 +134,6 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfCodeShred, grocksdb.NewDefaultOptions()
 	case CfTxStatus:
 		return &db.CfTxStatus, grocksdb.NewDefaultOptions()
-	case CfTxStatusIndex:
-		return &db.CfTxStatusIndex, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}
