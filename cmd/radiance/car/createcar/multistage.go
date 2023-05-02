@@ -38,14 +38,14 @@ const (
 )
 
 type Multistage struct {
-	settingConcurrency int
+	settingConcurrency uint
 	carFilepath        string
 
 	linkSystem    linking.LinkSystem
 	linkPrototype cidlink.LinkPrototype
 
 	carFile    *os.File
-	storageCar *storage.StorageCar
+	storageCar storage.WritableCar
 
 	mu  sync.Mutex
 	reg *registry.Registry
@@ -96,7 +96,7 @@ func NewMultistage(finalCARFilepath string) (*Multistage, error) {
 			cw.reg = reg
 		}
 
-		writableCar, err := storage.NewReadableWritable(
+		writableCar, err := storage.NewWritable(
 			file,
 			[]cid.Cid{proxyRoot}, // NOTE: the root CIDs are replaced later.
 			car.UseWholeCIDs(true),
@@ -108,10 +108,22 @@ func NewMultistage(finalCARFilepath string) (*Multistage, error) {
 
 		// Set the link system to use the writable CAR.
 		cw.linkSystem.SetWriteStorage(writableCar)
-		cw.linkSystem.SetReadStorage(writableCar)
+		// cw.linkSystem.SetReadStorage(writableCar)
 	}
 
 	return cw, nil
+}
+
+func (cw *Multistage) Store(lnkCtx linking.LinkContext, node datamodel.Node) (datamodel.Link, error) {
+	// TODO: is this safe to use concurrently?
+	// cw.mu.Lock()
+	// defer cw.mu.Unlock()
+
+	return cw.linkSystem.Store(
+		lnkCtx,
+		cw.linkPrototype,
+		node,
+	)
 }
 
 func (cw *Multistage) finalizeCAR() error {
@@ -140,20 +152,8 @@ func (cw *Multistage) replaceRoot(newRoot cid.Cid) error {
 	)
 }
 
-func (cw *Multistage) SetConcurrency(concurrency int) {
+func (cw *Multistage) SetConcurrency(concurrency uint) {
 	cw.settingConcurrency = concurrency
-}
-
-func (cw *Multistage) Store(lnkCtx linking.LinkContext, n datamodel.Node) (datamodel.Link, error) {
-	// TODO: is this safe to use concurrently?
-	cw.mu.Lock()
-	defer cw.mu.Unlock()
-
-	return cw.linkSystem.Store(
-		lnkCtx,
-		cw.linkPrototype,
-		n,
-	)
 }
 
 // OnBlock is called when a block is received.
@@ -422,12 +422,12 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
-	klog.Infof("Replacing roots in CAR for epoch %d", epoch)
+	klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
 	err = cw.replaceRoot(epochRootLink.(cidlink.Link).Cid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to replace roots in file: %w", err)
 	}
-	klog.Infof("Replaced roots in CAR for epoch %d", epoch)
+	klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
 
 	cw.reg.Destroy()
 	return epochRootLink, nil
@@ -528,7 +528,7 @@ func (cw *Multistage) onSubset(schedule SlotRangeSchedule, out func(datamodel.Li
 
 func (cw *Multistage) getSettingConcurrency() int {
 	if cw.settingConcurrency > 0 {
-		return cw.settingConcurrency
+		return int(cw.settingConcurrency)
 	}
 	return runtime.NumCPU()
 }

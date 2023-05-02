@@ -19,6 +19,7 @@ import (
 	"go.firedancer.io/radiance/pkg/iostats"
 	"go.firedancer.io/radiance/pkg/shred"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -101,6 +102,7 @@ func run(c *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
+	multi.SetConcurrency(workers)
 
 	// TODO:
 	// - create a slot tracker
@@ -112,11 +114,16 @@ func run(c *cobra.Command, args []string) {
 	// - if yes, then:
 	//   - create a new CAR file for the entire DB
 	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
+	wg := new(errgroup.Group)
+	wg.SetLimit(int(workers))
 	callback := func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error {
-		_, err = multi.OnBlock(slotMeta, entries, txMetas)
-		if err != nil {
-			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
-		}
+		wg.Go(func() error {
+			_, err = multi.OnBlock(slotMeta, entries, txMetas)
+			if err != nil {
+				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
+			}
+			return nil
+		})
 		return nil
 	}
 	// Create new cargen worker.
@@ -133,6 +140,9 @@ func run(c *cobra.Command, args []string) {
 
 	ctx := c.Context()
 	if err = w.Run(ctx); err != nil {
+		klog.Exitf("FATAL: %s", err)
+	}
+	if err = wg.Wait(); err != nil {
 		klog.Exitf("FATAL: %s", err)
 	}
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
