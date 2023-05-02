@@ -26,12 +26,14 @@ type Worker struct {
 	epoch uint64
 	stop  uint64 // exclusive
 
-	callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error
+	callback Callback
 
 	totalSlotsToProcess uint64
 	bar                 *mpb.Bar
 	numTxns             *atomic.Uint64
 }
+
+type Callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error
 
 // uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
 func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bool {
@@ -47,7 +49,7 @@ func NewIterator(
 	walk blockstore.BlockWalkI,
 	requireFullEpoch bool,
 	limitSlots uint64,
-	callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error,
+	callback Callback,
 ) (*Worker, error) {
 	if callback == nil {
 		return nil, fmt.Errorf("callback must be provided")

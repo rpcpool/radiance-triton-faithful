@@ -12,7 +12,6 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
-	"github.com/klauspost/compress/zstd"
 	"github.com/linxGnu/grocksdb"
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
@@ -122,6 +121,11 @@ func run(c *cobra.Command, args []string) {
 			if err != nil {
 				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 			}
+			for _, txMeta := range txMetas {
+				if txMeta != nil {
+					txMeta = nil
+				}
+			}
 			return nil
 		})
 		return nil
@@ -202,43 +206,4 @@ func slotBounds(db *blockstore.DB) (low uint64, high uint64, ok bool) {
 	high, ok = blockstore.ParseSlotKey(iter.Key().Data())
 	high++
 	return
-}
-
-var encoder, _ = zstd.NewWriter(nil,
-	// zstd.WithEncoderLevel(zstd.SpeedBestCompression),
-	zstd.WithEncoderLevel(zstd.SpeedBetterCompression),
-)
-
-// Compress a buffer.
-// If you have a destination buffer, the allocation in the call can also be eliminated.
-func Compress(src []byte) []byte {
-	return encoder.EncodeAll(src, make([]byte, 0, len(src)))
-}
-
-func hunamizeAndRate(sizeOriginal uint64, sizeCompressed uint64) string {
-	return fmt.Sprintf("%s (x%.2f)", humanize.Bytes((sizeCompressed)), calcCompressionRate(sizeOriginal, sizeCompressed))
-}
-
-func calcCompressionRate(sizeOriginal uint64, sizeCompressed uint64) float64 {
-	return float64(sizeOriginal) / float64(sizeCompressed)
-}
-
-type WriterCounter struct {
-	counter *uint64
-}
-
-func NewWriterCounter() *WriterCounter {
-	return &WriterCounter{counter: new(uint64)}
-}
-
-func (w *WriterCounter) Write(p []byte) (int, error) {
-	*w.counter += uint64(len(p))
-	return len(p), nil
-}
-
-func (w *WriterCounter) Count() uint64 {
-	if w.counter == nil {
-		return 0
-	}
-	return *w.counter
 }
