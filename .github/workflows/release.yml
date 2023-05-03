@@ -1,15 +1,15 @@
 name: Release radiance tool
 
-on:
-  push:
-    branches: [ tx_meta ]
-  pull_request:
-    branches: [ main ]
-
 # on:
 #   push:
-#     tags:
-#       - v*
+#     branches: [ tx_meta ]
+#   pull_request:
+#     branches: [ main ]
+
+on:
+  push:
+    tags:
+      - v*
 
 jobs:
   build:
@@ -47,8 +47,8 @@ jobs:
             # build
             make full
 
-      # - name: Create release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     files: |
-      #       radiance
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            radiance
