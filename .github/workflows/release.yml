@@ -1,4 +1,4 @@
-name: Release haproxy healthcheck binaries
+name: Release radiance tool
 
 on:
   push:
@@ -28,16 +28,20 @@ jobs:
       - name: build binaries
         run: |
             # snappy
-            apt-get install libsnappy-dev
+            sudo apt update
+            sudo apt-get install -y libsnappy-dev build-essential cmake zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+
             # protoc
             go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
             export PATH="$PATH:$(go env GOPATH)/bin"
             wget https://github.com/protocolbuffers/protobuf/releases/download/v22.3/protoc-22.3-linux-x86_64.zip
             unzip protoc-22.3-linux-x86_64.zip
-            mv bin/protoc /usr/bin/protoc
-            chmod +x /usr/bin/protoc
+            sudo mv bin/protoc /usr/bin/protoc
+            sudo chmod +x /usr/bin/protoc
+
             # deps
             make gen-proto
+
             # build
             make full
 
