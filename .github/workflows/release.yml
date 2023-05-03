@@ -28,6 +28,7 @@ jobs:
       - name: build binaries
         run: |
             sudo cp /usr/bin/go /usr/bin/go1.19.7
+            go1.19.7 download
 
             # snappy
             sudo apt update
