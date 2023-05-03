@@ -5,27 +5,27 @@ ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 install_compatible_golang_version:
 	go install golang.org/dl/go1.19.7@latest
 build_rocksdb:
-	sudo apt install -y librocksdb-dev
-	# mkdir -p facebook ; cd facebook ; \
-	# git clone https://github.com/facebook/rocksdb --branch v7.10.2 --depth 1 ; \
-	# cd ./rocksdb ; \
-	# mkdir -p build && cd build ; \
-	# cmake .. \
-	# 	-DCMAKE_BUILD_TYPE=Release \
-	# 	-DROCKSDB_BUILD_SHARED=OFF \
-	# 	-DWITH_GFLAGS=OFF \
-	# 	-DWITH_BZ2=ON \
-	# 	-DWITH_SNAPPY=OFF \
-	# 	-DWITH_ZLIB=ON \
-	# 	-DWITH_ZSTD=ON \
-	# 	-DWITH_ALL_TESTS=OFF \
-	# 	-DWITH_BENCHMARK_TOOLS=OFF \
-	# 	-DWITH_CORE_TOOLS=OFF \
-	# 	-DWITH_RUNTIME_DEBUG=OFF \
-	# 	-DWITH_TESTS=OFF \
-	# 	-DWITH_TOOLS=OFF \
-	# 	-DWITH_TRACE_TOOLS=OFF ; \
-	# make -j `nproc`
+	# sudo apt install -y librocksdb-dev
+	mkdir -p facebook ; cd facebook ; \
+	git clone https://github.com/facebook/rocksdb --branch v7.10.2 --depth 1 ; \
+	cd ./rocksdb ; \
+	mkdir -p build && cd build ; \
+	cmake .. \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DROCKSDB_BUILD_SHARED=OFF \
+		-DWITH_GFLAGS=OFF \
+		-DWITH_BZ2=ON \
+		-DWITH_SNAPPY=OFF \
+		-DWITH_ZLIB=ON \
+		-DWITH_ZSTD=ON \
+		-DWITH_ALL_TESTS=OFF \
+		-DWITH_BENCHMARK_TOOLS=OFF \
+		-DWITH_CORE_TOOLS=OFF \
+		-DWITH_RUNTIME_DEBUG=OFF \
+		-DWITH_TESTS=OFF \
+		-DWITH_TOOLS=OFF \
+		-DWITH_TRACE_TOOLS=OFF ; \
+	make -j `nproc`
 lite: install_compatible_golang_version
 	go build -tags=lite ./cmd/radiance
 full: install_compatible_golang_version build_rocksdb
