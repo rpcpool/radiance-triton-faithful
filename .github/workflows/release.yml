@@ -41,8 +41,6 @@ jobs:
             sudo mv bin/protoc /usr/bin/protoc
             sudo chmod +x /usr/bin/protoc
 
-            sudo cp
-
             # deps
             make gen-proto
 
