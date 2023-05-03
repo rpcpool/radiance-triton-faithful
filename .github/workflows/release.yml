@@ -44,8 +44,6 @@ jobs:
             # deps
             make gen-proto
 
-            go download
-
             # build
             make full
 
