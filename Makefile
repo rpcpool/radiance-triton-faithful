@@ -24,7 +24,7 @@ build_rocksdb:
 		-DWITH_TESTS=OFF \
 		-DWITH_TOOLS=OFF \
 		-DWITH_TRACE_TOOLS=OFF ; \
-	make -j
+	make -j `nproc`
 lite: install_compatible_golang_version
 	go1.19.7 build -tags=lite ./cmd/radiance
 full: install_compatible_golang_version build_rocksdb
