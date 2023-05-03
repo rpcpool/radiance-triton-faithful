@@ -27,8 +27,8 @@ jobs:
 
       - name: build binaries
         run: |
-            cp /usr/bin/go /usr/bin/go1.19.7
-            
+            sudo cp /usr/bin/go /usr/bin/go1.19.7
+
             # snappy
             sudo apt update
             sudo apt-get install -y libsnappy-dev build-essential cmake zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
