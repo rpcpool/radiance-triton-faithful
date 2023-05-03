@@ -27,11 +27,11 @@ build_rocksdb:
 	# 	-DWITH_TRACE_TOOLS=OFF ; \
 	# make -j `nproc`
 lite: install_compatible_golang_version
-	go1.19.7 build -tags=lite ./cmd/radiance
+	go build -tags=lite ./cmd/radiance
 full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
-	go1.19.7 build ./cmd/radiance
+	go build ./cmd/radiance
 radiance: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
