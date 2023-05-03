@@ -2,7 +2,7 @@ name: Release radiance tool
 
 on:
   push:
-    branches: [ main ]
+    branches: [ tx_meta ]
   pull_request:
     branches: [ main ]
 
