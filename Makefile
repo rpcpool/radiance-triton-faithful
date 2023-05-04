@@ -5,7 +5,6 @@ ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 install_compatible_golang_version:
 	go install golang.org/dl/go1.19.7@latest
 build_rocksdb:
-	# sudo apt install -y librocksdb-dev
 	mkdir -p facebook ; cd facebook ; \
 	git clone https://github.com/facebook/rocksdb --branch v7.10.2 --depth 1 ; \
 	cd ./rocksdb ; \
@@ -25,6 +24,8 @@ build_rocksdb:
 		-DWITH_TESTS=OFF \
 		-DWITH_TOOLS=OFF \
 		-DWITH_TRACE_TOOLS=OFF ; \
+	# limit concurrency to number of CPU cores (not threads)
+	# helps managing memory use during build
 	make -j `nproc`
 lite: install_compatible_golang_version
 	go build -tags=lite ./cmd/radiance
