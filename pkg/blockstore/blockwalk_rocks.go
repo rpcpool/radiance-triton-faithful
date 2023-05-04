@@ -83,11 +83,10 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	}
 	h := m.handles[0]
 	if m.root == nil {
-		ret := grocksdb.NewDefaultReadOptions()
-		ret.SetVerifyChecksums(false)
-		ret.SetFillCache(false)
+		opts := getReadOptions()
+		defer putReadOptions(opts)
 		// Open Next database
-		m.root = h.DB.DB.NewIteratorCF(ret, h.DB.CfRoot)
+		m.root = h.DB.DB.NewIteratorCF(opts, h.DB.CfRoot)
 		key := MakeSlotKey(h.Start)
 		m.root.Seek(key[:])
 	}

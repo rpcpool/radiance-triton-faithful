@@ -9,7 +9,6 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"k8s.io/klog/v2"
 )
 
@@ -33,7 +32,7 @@ type Worker struct {
 	numTxns             *atomic.Uint64
 }
 
-type Callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error
+type Callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry) error
 
 // uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
 func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bool {
@@ -165,18 +164,8 @@ func (w *Worker) step() (next bool, err error) {
 func (w *Worker) processSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) error {
 	slot := meta.Slot
 
-	transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
-	if err != nil {
-		return err
-	}
-
-	txMetas, err := w.walk.TransactionMetas(transactionMetaKeys...)
-	if err != nil {
-		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
-	}
-
 	klog.V(3).Infof("Slot %d", slot)
-	return w.callback(meta, entries, txMetas)
+	return w.callback(meta, entries)
 }
 
 func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {

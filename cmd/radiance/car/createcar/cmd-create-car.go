@@ -115,8 +115,19 @@ func run(c *cobra.Command, args []string) {
 	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
 	wg := new(errgroup.Group)
 	wg.SetLimit(int(workers))
-	callback := func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error {
+	callback := func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry) error {
 		wg.Go(func() error {
+			slot := slotMeta.Slot
+			transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
+			if err != nil {
+				return err
+			}
+
+			txMetas, err := walker.TransactionMetas(transactionMetaKeys...)
+			if err != nil {
+				return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+			}
+
 			_, err = multi.OnBlock(slotMeta, entries, txMetas)
 			if err != nil {
 				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))

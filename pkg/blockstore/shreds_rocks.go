@@ -23,9 +23,8 @@ func (d *DB) GetAllDataShreds(slot uint64, revision int) ([]shred.Shred, error) 
 }
 
 func (d *DB) GetDataShreds(slot uint64, startIdx, endIdx uint32, revision int) ([]shred.Shred, error) {
-	opts := grocksdb.NewDefaultReadOptions()
-	opts.SetVerifyChecksums(false)
-	opts.SetFillCache(false)
+	opts := getReadOptions()
+	defer putReadOptions(opts)
 	iter := d.DB.NewIteratorCF(opts, d.CfDataShred)
 	defer iter.Close()
 	key := MakeShredKey(slot, uint64(startIdx))
@@ -93,9 +92,8 @@ func (d *DB) getRawShred(
 	cf *grocksdb.ColumnFamilyHandle,
 	slot, index uint64,
 ) (*grocksdb.Slice, error) {
-	opts := grocksdb.NewDefaultReadOptions()
-	opts.SetVerifyChecksums(false)
-	opts.SetFillCache(false)
+	opts := getReadOptions()
+	defer putReadOptions(opts)
 	key := MakeShredKey(slot, index)
 	return d.DB.GetCF(opts, cf, key[:])
 }
@@ -118,9 +116,8 @@ func (d *DB) getAllShreds(
 	slot uint64,
 	revision int,
 ) ([]shred.Shred, error) {
-	opts := grocksdb.NewDefaultReadOptions()
-	opts.SetVerifyChecksums(false)
-	opts.SetFillCache(false)
+	opts := getReadOptions()
+	defer putReadOptions(opts)
 	iter := d.DB.NewIteratorCF(opts, cf)
 	defer iter.Close()
 	prefix := MakeSlotKey(slot)
