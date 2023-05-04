@@ -3,13 +3,13 @@ name: Release radiance tool
 on:
   push:
     branches: [ tx_meta ]
+    tags:
+      - v*
   pull_request:
     branches: [ main ]
 
 # on:
 #   push:
-#     tags:
-#       - v*
 
 jobs:
   build:
@@ -58,8 +58,9 @@ jobs:
 
             ls -lha .
 
-      # - name: Create release
-      #   uses: softprops/action-gh-release@v1
-      #   with:
-      #     files: |
-      #       radiance
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            radiance
