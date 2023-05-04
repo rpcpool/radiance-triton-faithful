@@ -30,6 +30,8 @@ jobs:
         with:
           key: ${{ runner.os }}-build
           path: |
+            ~/radiance-triton/facebook/
+            ~/radiance-triton/radiance-triton/facebook/
             ~/work/radiance-triton/radiance-triton/facebook/
 
       - name: build binaries
