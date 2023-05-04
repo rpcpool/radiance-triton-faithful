@@ -83,8 +83,11 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	}
 	h := m.handles[0]
 	if m.root == nil {
+		ret := grocksdb.NewDefaultReadOptions()
+		ret.SetVerifyChecksums(false)
+		ret.SetFillCache(false)
 		// Open Next database
-		m.root = h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), h.DB.CfRoot)
+		m.root = h.DB.DB.NewIteratorCF(ret, h.DB.CfRoot)
 		key := MakeSlotKey(h.Start)
 		m.root.Seek(key[:])
 	}
@@ -192,7 +195,10 @@ func sortWalkHandles(h []WalkHandle, shredRevision int) error {
 
 // getLowestCompleteSlot finds the lowest slot in a RocksDB from which slots are complete onwards.
 func getLowestCompletedSlot(d *DB, shredRevision int) (uint64, error) {
-	iter := d.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), d.CfMeta)
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	iter := d.DB.NewIteratorCF(opts, d.CfMeta)
 	defer iter.Close()
 	iter.SeekToFirst()
 

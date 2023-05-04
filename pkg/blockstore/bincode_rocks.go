@@ -11,6 +11,8 @@ import (
 
 func GetBincode[T any](db *grocksdb.DB, cf *grocksdb.ColumnFamilyHandle, key []byte) (*T, error) {
 	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
 	res, err := db.GetCF(opts, cf, key)
 	if err != nil {
 		return nil, err
@@ -24,6 +26,8 @@ func GetBincode[T any](db *grocksdb.DB, cf *grocksdb.ColumnFamilyHandle, key []b
 
 func MultiGetBincode[T any](db *grocksdb.DB, cf *grocksdb.ColumnFamilyHandle, key ...[]byte) ([]*T, error) {
 	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
 	rows, err := db.MultiGetCF(opts, cf, key...)
 	if err != nil {
 		return nil, err

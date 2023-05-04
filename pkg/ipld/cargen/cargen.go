@@ -66,7 +66,7 @@ const MaxCARSize = 1 << 35
 // Except for the ipldgen.SolanaTx "leaf" nodes, which are encoded using bincode (native).
 type Worker struct {
 	dir   string
-	walk  blockstore.BlockWalkI
+	walk  blockstore.BlockWalker
 	epoch uint64
 	stop  uint64 // exclusive
 
@@ -94,7 +94,7 @@ func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bo
 func NewWorker(
 	outDir string,
 	epoch uint64,
-	walk blockstore.BlockWalkI,
+	walk blockstore.BlockWalker,
 	requireFullEpoch bool,
 	limitSlots uint64,
 ) (*Worker, error) {

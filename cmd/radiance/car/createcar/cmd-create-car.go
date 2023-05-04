@@ -187,7 +187,10 @@ func run(c *cobra.Command, args []string) {
 
 // slotBounds returns the lowest and highest available slots in the meta table.
 func slotBounds(db *blockstore.DB) (low uint64, high uint64, ok bool) {
-	iter := db.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), db.CfMeta)
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	iter := db.DB.NewIteratorCF(opts, db.CfMeta)
 	defer iter.Close()
 
 	iter.SeekToFirst()

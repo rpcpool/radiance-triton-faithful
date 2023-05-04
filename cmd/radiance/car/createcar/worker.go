@@ -22,7 +22,7 @@ import (
 const MaxCARSize = 1 << 35
 
 type Worker struct {
-	walk  blockstore.BlockWalkI
+	walk  blockstore.BlockWalker
 	epoch uint64
 	stop  uint64 // exclusive
 
@@ -46,7 +46,7 @@ func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bo
 
 func NewIterator(
 	epoch uint64,
-	walk blockstore.BlockWalkI,
+	walk blockstore.BlockWalker,
 	requireFullEpoch bool,
 	limitSlots uint64,
 	callback Callback,
@@ -180,12 +180,20 @@ func (w *Worker) processSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry)
 }
 
 func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {
-	keys := make([][]byte, 0)
+	ln := 0
+	for _, batch := range entries {
+		for _, entry := range batch {
+			ln += len(entry.Txns)
+		}
+	}
+	keys := make([][]byte, ln)
+	index := 0
 	for _, batch := range entries {
 		for _, entry := range batch {
 			for _, tx := range entry.Txns {
 				firstSig := tx.Signatures[0]
-				keys = append(keys, blockstore.FormatTxMetadataKey(slot, firstSig))
+				keys[index] = blockstore.FormatTxMetadataKey(slot, firstSig)
+				index++
 			}
 		}
 	}

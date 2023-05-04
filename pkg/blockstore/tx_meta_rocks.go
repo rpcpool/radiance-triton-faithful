@@ -24,7 +24,10 @@ func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 }
 
 func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error) {
-	got, err := d.DB.MultiGetCF(grocksdb.NewDefaultReadOptions(), d.CfTxStatus, keys...)
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tx meta: %w", err)
 	}

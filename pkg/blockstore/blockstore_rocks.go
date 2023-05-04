@@ -5,6 +5,7 @@ package blockstore
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/linxGnu/grocksdb"
 )
@@ -42,6 +43,22 @@ func OpenSecondary(path string, secondaryPath string) (*DB, error) {
 func open(path string, secondaryPath string) (*DB, error) {
 	// List all available column families
 	dbOpts := grocksdb.NewDefaultOptions()
+	dbOpts.SetAllowMmapReads(true)
+	// dbOpts.SetUseDirectReads(true)
+	dbOpts.SetUseDirectIOForFlushAndCompaction(true)
+	dbOpts.SetMaxFileOpeningThreads(2000)
+	dbOpts.AvoidUnnecessaryBlockingIO(true)
+	dbOpts.PrepareForBulkLoad()
+	//
+	// dbOpts.SetMemtableVectorRep()
+	dbOpts.IncreaseParallelism(runtime.NumCPU())
+	dbOpts.SetMaxOpenFiles(-1)
+	// dbOpts.SetUseAdaptiveMutex(true)
+	dbOpts.SetAllowConcurrentMemtableWrites(false)
+	dbOpts.OptimizeForPointLookup(300)
+
+	defer dbOpts.Destroy()
+
 	allCfNames, err := grocksdb.ListColumnFamilies(dbOpts, path)
 	if err != nil {
 		return nil, err
