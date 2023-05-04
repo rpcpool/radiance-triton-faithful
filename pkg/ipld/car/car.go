@@ -16,10 +16,8 @@ import (
 var IdentityCID cid.Cid
 
 func init() {
-	id, err := cid.Cast([]byte{0x01, 0x55, 0x00, 0x00})
-	if err != nil {
-		panic("failed to create zero-length identity multihash with raw codec lmfao")
-	}
+	id := cid.MustParse("bafyreics5uul5lbtxslcigtoa5fkba7qgwu7cyb7ih7z6fzsh4lgfgraau")
+
 	IdentityCID = id
 }
 

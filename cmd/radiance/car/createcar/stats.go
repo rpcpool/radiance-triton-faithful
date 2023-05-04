@@ -58,8 +58,8 @@ func (w *Worker) initStatsTracker(ctx context.Context) error {
 		numBytesWritten, _ := iostats.GetDiskWriteBytes()
 
 		klog.Infof(
-			"[stats] tps=%.0f io-r=%s io-w=%s io-r/s=%s io-w/s=%s",
-			txRate.Value(),
+			"[stats] io-r=%s io-w=%s io-r/s=%s io-w/s=%s",
+			// txRate.Value(),
 			humanize.IBytes(numBytesRead),
 			humanize.IBytes(numBytesWritten),
 			humanize.IBytes(uint64(discReadRate.Value())),

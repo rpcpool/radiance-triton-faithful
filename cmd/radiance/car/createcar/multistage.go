@@ -2,15 +2,12 @@ package createcar
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
 
-	carv2 "github.com/ipfs/boxo/ipld/car/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
-	"github.com/ipld/go-car/v2/storage"
 	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/fluent/qp"
 	"github.com/ipld/go-ipld-prime/linking"
@@ -21,6 +18,7 @@ import (
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
+	firecar "go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
@@ -41,31 +39,18 @@ type Multistage struct {
 	settingConcurrency uint
 	carFilepath        string
 
-	linkSystem    linking.LinkSystem
-	linkPrototype cidlink.LinkPrototype
+	storageCar *carHandle
 
-	carFile    *os.File
-	storageCar storage.WritableCar
-
-	mu  sync.Mutex
 	reg *registry.Registry
 }
 
+// - [x] in stage 1, we create a CAR file for all the slots
+// - there's a registry of all slots that have been written, and their CIDs (very important)
+// - write is protected by a mutex
+// - [x] in stage 2, we add the missing parts of the DAG (same CAR file).
 func NewMultistage(finalCARFilepath string) (*Multistage, error) {
-	lsys := cidlink.DefaultLinkSystem()
-	lp := cidlink.LinkPrototype{
-		Prefix: cid.Prefix{
-			Version:  1,                          // TODO: what is this?
-			Codec:    uint64(multicodec.DagCbor), // See the multicodecs table: https://github.com/multiformats/multicodec/
-			MhType:   uint64(multicodec.Sha2_256),
-			MhLength: -1,
-		},
-	}
-
 	cw := &Multistage{
-		carFilepath:   finalCARFilepath,
-		linkSystem:    lsys,
-		linkPrototype: lp,
+		carFilepath: finalCARFilepath,
 	}
 	{
 		exists, err := fileExists(finalCARFilepath)
@@ -73,80 +58,50 @@ func NewMultistage(finalCARFilepath string) (*Multistage, error) {
 			return nil, err
 		}
 		if exists {
-			return nil, fmt.Errorf("file %s already exists", finalCARFilepath)
-		}
-		file, err := os.Create(finalCARFilepath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create file: %w", err)
-		}
-		cw.carFile = file
-
-		// make a cid with the right length that we eventually will patch with the root.
-		proxyRoot, err := cw.linkPrototype.WithCodec(uint64(multicodec.DagCbor)).Sum([]byte{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create proxy root: %w", err)
+			return nil, fmt.Errorf("file %q already exists", finalCARFilepath)
 		}
 
 		{
-			registryFilepath := filepath.Join(filepath.Dir(finalCARFilepath), "registry.bin")
-			reg, err := registry.New(registryFilepath, proxyRoot.ByteLen())
+			registryFilepath := filepath.Join(finalCARFilepath + ".registry.bin")
+			cidLen := 36
+			reg, err := registry.New(registryFilepath, cidLen)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create registry: %w", err)
 			}
 			cw.reg = reg
 		}
 
-		writableCar, err := storage.NewWritable(
-			file,
-			[]cid.Cid{proxyRoot}, // NOTE: the root CIDs are replaced later.
-			car.UseWholeCIDs(true),
-		)
+		writableCar := new(carHandle)
+		err = writableCar.open(finalCARFilepath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create writable CAR: %w", err)
 		}
 		cw.storageCar = writableCar
-
-		// Set the link system to use the writable CAR.
-		cw.linkSystem.SetWriteStorage(writableCar)
-		// cw.linkSystem.SetReadStorage(writableCar)
 	}
 
 	return cw, nil
 }
 
 func (cw *Multistage) Store(lnkCtx linking.LinkContext, node datamodel.Node) (datamodel.Link, error) {
-	// TODO: is this safe to use concurrently?
-	// cw.mu.Lock()
-	// defer cw.mu.Unlock()
-
-	return cw.linkSystem.Store(
-		lnkCtx,
-		cw.linkPrototype,
-		node,
-	)
-}
-
-func (cw *Multistage) finalizeCAR() error {
-	if cw.carFile == nil {
-		return fmt.Errorf("car file is nil")
+	block, err := firecar.NewBlockFromCBOR(node, uint64(multicodec.DagCbor))
+	if err != nil {
+		return nil, err
 	}
-	if cw.storageCar == nil {
-		return fmt.Errorf("storageCar is nil")
+	err = cw.storageCar.WriteBlock(block)
+	if err != nil {
+		return nil, err
 	}
-	return cw.storageCar.Finalize()
+	return cidlink.Link{Cid: block.Cid}, nil
 }
 
 func (cw *Multistage) Close() error {
-	if cw.carFile != nil {
-		return cw.carFile.Close()
-	}
-	return nil
+	return cw.storageCar.close()
 }
 
 // replaceRoot is used to replace the root CID in the CAR file.
 // This is done when we have the epoch root CID.
 func (cw *Multistage) replaceRoot(newRoot cid.Cid) error {
-	return carv2.ReplaceRootsInFile(
+	return car.ReplaceRootsInFile(
 		cw.carFilepath,
 		[]cid.Cid{newRoot},
 	)
@@ -165,21 +120,14 @@ func (cw *Multistage) OnBlock(
 	entries [][]shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
-	// TODO:
-	// - [ ] construct the block
-	// - [ ] register the block CID
+	// - [x] construct the block
 	blockRootLink, err := cw.constructBlock(slotMeta, entries, metas)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct epoch: %w", err)
+		return nil, fmt.Errorf("failed to construct block: %w", err)
 	}
+	// - [x] register the block CID
 	return blockRootLink, cw.reg.SetCID(slotMeta.Slot, blockRootLink.(cidlink.Link).Cid.Bytes())
 }
-
-// TODO:
-// - [ ] in stage 1, we create a CAR file for all the slots
-// - there's a registry of all slots that have been written, and their CIDs (very important)
-// - write is protected by a mutex
-// - [ ] in stage 2, we add the missing parts of the DAG (same CAR file)
 
 func (cw *Multistage) constructBlock(
 	slotMeta *radianceblockstore.SlotMeta,
@@ -410,12 +358,7 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	klog.Infof("Completed DAG for epoch %d", epoch)
 
-	klog.Infof("Finalizing CAR for epoch %d...", epoch)
-	err = cw.finalizeCAR()
-	if err != nil {
-		return nil, fmt.Errorf("failed to finalize writable CAR: %w", err)
-	}
-	klog.Infof("Finalized CAR for epoch %d; closing...", epoch)
+	klog.Infof("Closing CAR...")
 	err = cw.Close()
 	if err != nil {
 		return nil, fmt.Errorf("failed to close file: %w", err)
