@@ -36,7 +36,6 @@ jobs:
 
       - name: build binaries
         run: |
-            sudo cp /usr/bin/go /usr/bin/go1.19.7
 
             # snappy
             sudo apt update
@@ -56,7 +55,7 @@ jobs:
             # build
             make full
 
-            ls -lha .
+            ls -lha radiance
 
       - name: Create release
         uses: softprops/action-gh-release@v1
