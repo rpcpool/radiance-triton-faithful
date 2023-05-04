@@ -20,7 +20,7 @@ type carHandle struct {
 }
 
 const (
-	writeBufSize = 256 * KiB
+	writeBufSize = MiB
 )
 
 func (c *carHandle) open(finalCARFilepath string) error {

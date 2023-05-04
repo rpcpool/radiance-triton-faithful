@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
-	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
@@ -115,9 +113,15 @@ func run(c *cobra.Command, args []string) {
 	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
 	wg := new(errgroup.Group)
 	wg.SetLimit(int(workers))
-	callback := func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry) error {
+	callback := func(slotMeta *blockstore.SlotMeta) error {
 		wg.Go(func() error {
 			slot := slotMeta.Slot
+
+			entries, err := walker.Entries(slotMeta)
+			if err != nil {
+				return err
+			}
+
 			transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
 			if err != nil {
 				return err
