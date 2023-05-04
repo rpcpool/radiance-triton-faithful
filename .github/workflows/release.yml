@@ -28,10 +28,11 @@ jobs:
       - name: Cache rocksdb build
         uses: actions/cache@v3
         with:
+          key: ${{ runner.os }}-build
           path: |
             ~/radiance-triton/facebook/
             ~/radiance-triton/radiance-triton/facebook/
-          key: ${{ runner.os }}-build
+            ~/work/radiance-triton/radiance-triton/facebook/
 
       - name: build binaries
         run: |
@@ -57,9 +58,8 @@ jobs:
 
             ls -lha .
 
-
-      - name: Create release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            radiance
+      # - name: Create release
+      #   uses: softprops/action-gh-release@v1
+      #   with:
+      #     files: |
+      #       radiance
