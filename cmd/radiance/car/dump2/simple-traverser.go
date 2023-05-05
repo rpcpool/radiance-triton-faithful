@@ -22,7 +22,7 @@ func openCarReaderWithCidIndex(carPath string, indexDir string) (*carv2.Reader, 
 	// check if index file exists.
 	if empty, err := isDirEmpty(indexDir); empty {
 		klog.Infof("Index %s does not exist, creating...", indexDir)
-		err := CreateIndex(context.Background(), carPath, indexDir)
+		err := CreateCompactIndex(context.Background(), carPath, indexDir)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create index: %w", err)
 		}

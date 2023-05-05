@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -18,7 +17,6 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/ipld/go-car/util"
 	carv2 "github.com/ipld/go-car/v2"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/indexcidtooffset"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"go.firedancer.io/radiance/pkg/blockstore"
@@ -28,71 +26,37 @@ import (
 
 func main() {
 	carPath := os.Args[1]
-	indexDir := os.ExpandEnv("/media/$HOME/solana-history/cidtooffset")
-	{
-		compactIndexDir := os.ExpandEnv("/media/$HOME/solana-history/compactindex")
-		numItems := 1000000
-		targetFileSize := 1024 * 1024 * 1024
-		builder, err := compactindex.NewBuilder(
-			"",
-			uint(numItems),
-			uint64(targetFileSize),
-		)
-		if err != nil {
-			panic(err)
+	indexDir := os.ExpandEnv("/media/$USER/solana-history/compactindex")
+	if true {
+		if true {
+			startedAt := time.Now()
+			defer func() {
+				klog.Infof("Finished in %s", time.Since(startedAt))
+			}()
+			klog.Infof("Creating index for %s", carPath)
+			err := CreateCompactIndex(
+				context.TODO(),
+				carPath,
+				indexDir,
+			)
+			if err != nil {
+				panic(err)
+			}
+			klog.Info("Index created")
+			return
 		}
-		defer builder.Close()
-
-		c := cid.MustParse("bafyreiahlvkcx76rc7m7dttjmak2fe4xk63ldsyh7xjofzln3mdsq6zqau")
-		builder.Insert(c.Hash(), 123)
 
 		// Create file for final index.
-		targetFile, err := os.Create(filepath.Join(compactIndexDir, "compactindex.index"))
+		targetFile, err := os.Open("TODO")
 		if err != nil {
 			panic(err)
 		}
 		defer targetFile.Close()
-		err = builder.Seal(context.TODO(), targetFile)
+
+		c2o, err := compactindex.Open(targetFile)
 		if err != nil {
 			panic(err)
 		}
-
-		{
-			_, err := targetFile.Seek(0, io.SeekStart)
-			if err != nil {
-				panic(err)
-			}
-
-			db, err := compactindex.Open(targetFile)
-			if err != nil {
-				panic(err)
-			}
-
-			// Run query benchmark.
-			{
-				bucket, err := db.LookupBucket(c.Hash())
-				if err != nil {
-					panic(err)
-				}
-				value, err := bucket.Lookup(c.Hash())
-				if err != nil {
-					panic(err)
-				}
-				spew.Dump(value)
-			}
-		}
-		return
-	}
-	if false {
-		c2o, err := indexcidtooffset.OpenStore(context.Background(),
-			filepath.Join(indexDir, "index"),
-			filepath.Join(indexDir, "data"),
-		)
-		if err != nil {
-			panic(err)
-		}
-		defer c2o.Close()
-		c2o.Start()
 
 		startedAt := time.Now()
 		defer func() {
@@ -100,10 +64,15 @@ func main() {
 		}()
 
 		c := cid.MustParse("bafyreiahlvkcx76rc7m7dttjmak2fe4xk63ldsyh7xjofzln3mdsq6zqau")
-		offset, err := c2o.Get(context.Background(), c)
+		bucket, err := c2o.LookupBucket(c.Hash())
 		if err != nil {
 			panic(err)
 		}
+		offset, err := bucket.Lookup(c.Hash())
+		if err != nil {
+			panic(err)
+		}
+
 		klog.Infof("offset: %d", offset)
 
 		cr, err := carv2.OpenReader(carPath)
@@ -142,23 +111,6 @@ func main() {
 		spew.Dump(bl)
 		spew.Dump(bl.RawData()[1])
 		fmt.Println("success")
-		return
-	}
-	if false {
-		startedAt := time.Now()
-		defer func() {
-			klog.Infof("Finished in %s", time.Since(startedAt))
-		}()
-		klog.Infof("Creating index for %s", carPath)
-		err := CreateIndex(
-			context.TODO(),
-			carPath,
-			indexDir,
-		)
-		klog.Info("Index created")
-		if err != nil {
-			panic(err)
-		}
 		return
 	}
 	if true {

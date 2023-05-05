@@ -17,6 +17,7 @@ import (
 	"github.com/ipld/go-car/util"
 	"github.com/ipld/go-storethehash/store"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/indexcidtooffset"
+	"go.firedancer.io/radiance/pkg/compactindex"
 	"k8s.io/klog/v2"
 )
 
@@ -140,7 +141,123 @@ func isDirEmpty(dir string) (bool, error) {
 	return false, err
 }
 
-func CreateIndex(ctx context.Context, carPath string, indexDir string) error {
+func getFileSize(path string) (uint64, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(st.Size()), nil
+}
+
+func carCountItems(carPath string) (uint64, error) {
+	f, err := os.Open(carPath)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+
+	rd, err := newCarReader(f)
+	if err != nil {
+		return 0, fmt.Errorf("failed to open car file: %w", err)
+	}
+
+	var count uint64
+	for {
+		_, _, err := rd.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return 0, err
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+func CreateCompactIndex(ctx context.Context, carPath string, indexDir string) error {
+	f, err := os.Open(carPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	rd, err := newCarReader(f)
+	if err != nil {
+		return fmt.Errorf("failed to open car file: %w", err)
+	}
+
+	klog.Infof("Getting car file size")
+	targetFileSize, err := getFileSize(carPath)
+	if err != nil {
+		return fmt.Errorf("failed to get car file size: %w", err)
+	}
+
+	klog.Infof("Counting items in car file...")
+	numItems, err := carCountItems(carPath)
+	if err != nil {
+		return fmt.Errorf("failed to count items in car file: %w", err)
+	}
+	klog.Infof("Found %d items in car file", numItems)
+
+	klog.Infof("Creating builder...")
+	c2o, err := compactindex.NewBuilder(
+		"",
+		uint(numItems),
+		(targetFileSize),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to open index store: %w", err)
+	}
+	defer c2o.Close()
+	totalOffset := uint64(0)
+	{
+		var buf bytes.Buffer
+		if err = carv1.WriteHeader(rd.header, &buf); err != nil {
+			return err
+		}
+		totalOffset = uint64(buf.Len())
+	}
+	numItemsIndexed := uint64(0)
+	klog.Infof("Indexing...")
+	for {
+		c, sectionLength, err := rd.Next()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		err = c2o.Insert(c.Bytes(), uint64(totalOffset))
+		if err != nil {
+			return fmt.Errorf("failed to put cid to offset: %w", err)
+		}
+
+		totalOffset += sectionLength
+
+		numItemsIndexed++
+		if numItemsIndexed%1_000 == 0 {
+			fmt.Print(".")
+		}
+	}
+
+	targetFile, err := os.Create(filepath.Join(indexDir, filepath.Base(carPath)+".index"))
+	if err != nil {
+		return fmt.Errorf("failed to create index file: %w", err)
+	}
+	defer targetFile.Close()
+
+	klog.Infof("Sealing index...")
+	if err = c2o.Seal(ctx, targetFile); err != nil {
+		return fmt.Errorf("failed to seal index: %w", err)
+	}
+	klog.Infof("Index created")
+	return nil
+}
+
+func CreateIndexStore(ctx context.Context, carPath string, indexDir string) error {
 	f, err := os.Open(carPath)
 	if err != nil {
 		return err
