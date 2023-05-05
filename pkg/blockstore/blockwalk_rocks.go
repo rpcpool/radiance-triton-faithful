@@ -17,7 +17,8 @@ type BlockWalk struct {
 	handles       []WalkHandle // sorted
 	shredRevision int
 
-	root *grocksdb.Iterator
+	root        *grocksdb.Iterator
+	onBeforePop func() error
 }
 
 func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
@@ -28,6 +29,10 @@ func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
 		handles:       handles,
 		shredRevision: shredRevision,
 	}, nil
+}
+
+func (m *BlockWalk) SetOnBeforePop(f func() error) {
+	m.onBeforePop = f
 }
 
 // Seek skips ahead to a specific slot.
@@ -92,7 +97,11 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	}
 	if !m.root.Valid() {
 		// Close current DB and go to Next
-		m.pop()
+		err := m.pop()
+		if err != nil {
+			klog.Exitf("Failed to pop: %s", err)
+			// TODO: return error instead of exiting
+		}
 		return m.Next() // TODO tail recursion optimization?
 	}
 
@@ -144,11 +153,18 @@ func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*confirmed_block.Transac
 }
 
 // pop closes the current open DB.
-func (m *BlockWalk) pop() {
+func (m *BlockWalk) pop() error {
+	if m.onBeforePop != nil {
+		err := m.onBeforePop()
+		if err != nil {
+			return fmt.Errorf("onBeforePop: %w", err)
+		}
+	}
 	m.root.Close()
 	m.root = nil
 	m.handles[0].DB.Close()
 	m.handles = m.handles[1:]
+	return nil
 }
 
 func (m *BlockWalk) Close() {

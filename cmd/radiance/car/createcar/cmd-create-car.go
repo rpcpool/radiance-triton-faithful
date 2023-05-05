@@ -16,7 +16,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
-	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -111,47 +110,42 @@ func run(c *cobra.Command, args []string) {
 	// - if yes, then:
 	//   - create a new CAR file for the entire DB
 	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
-	wg := new(errgroup.Group)
-	wg.SetLimit(int(workers))
 	callback := func(slotMeta *blockstore.SlotMeta) error {
-		wg.Go(func() error {
-			slot := slotMeta.Slot
+		slot := slotMeta.Slot
 
-			entries, err := walker.Entries(slotMeta)
-			if err != nil {
-				return err
-			}
+		entries, err := walker.Entries(slotMeta)
+		if err != nil {
+			return err
+		}
 
-			transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
-			if err != nil {
-				return err
-			}
+		transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
+		if err != nil {
+			return err
+		}
 
-			txMetas, err := walker.TransactionMetas(transactionMetaKeys...)
-			if err != nil {
-				return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
-			}
+		txMetas, err := walker.TransactionMetas(transactionMetaKeys...)
+		if err != nil {
+			return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+		}
 
-			_, err = multi.OnBlock(slotMeta, entries, txMetas)
-			if err != nil {
-				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
+		_, err = multi.OnBlock(slotMeta, entries, txMetas)
+		if err != nil {
+			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
+		}
+		for _, txMeta := range txMetas {
+			if txMeta != nil {
+				txMeta = nil
 			}
-			for _, txMeta := range txMetas {
-				if txMeta != nil {
-					txMeta = nil
-				}
-			}
-			return nil
-		})
+		}
 		return nil
 	}
-	// Create new cargen worker.
 	w, err := NewIterator(
 		epoch,
 		walker,
 		*flagRequireFullEpoch,
 		*flagLimitSlots,
 		callback,
+		workers,
 	)
 	if err != nil {
 		klog.Exitf("Failed to init cargen: %s", err)
@@ -159,9 +153,6 @@ func run(c *cobra.Command, args []string) {
 
 	ctx := c.Context()
 	if err = w.Run(ctx); err != nil {
-		klog.Exitf("FATAL: %s", err)
-	}
-	if err = wg.Wait(); err != nil {
 		klog.Exitf("FATAL: %s", err)
 	}
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)

@@ -9,6 +9,7 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/shred"
+	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
 
@@ -30,6 +31,9 @@ type Worker struct {
 	totalSlotsToProcess uint64
 	bar                 *mpb.Bar
 	numTxns             *atomic.Uint64
+
+	concurrency uint
+	group       *errgroup.Group
 }
 
 type Callback func(slotMeta *blockstore.SlotMeta) error
@@ -49,12 +53,16 @@ func NewIterator(
 	requireFullEpoch bool,
 	limitSlots uint64,
 	callback Callback,
+	concurrency uint,
 ) (*Worker, error) {
 	if callback == nil {
 		return nil, fmt.Errorf("callback must be provided")
 	}
 	if epoch == 0 {
 		return nil, fmt.Errorf("epoch must be > 0")
+	}
+	if concurrency == 0 {
+		return nil, fmt.Errorf("concurrency must be > 0")
 	}
 
 	// Seek to epoch start and make sure we have all data
@@ -118,7 +126,24 @@ func NewIterator(
 		stop:                stopAt,
 		totalSlotsToProcess: totalSlotsToProcess,
 		callback:            callback,
+		concurrency:         concurrency,
+		group:               new(errgroup.Group),
 	}
+
+	w.group.SetLimit(int(concurrency))
+
+	walk.SetOnBeforePop(func() error {
+		// wait for the current batch processing to finish before closing the DB and opening the next one
+		err := w.group.Wait()
+		if err != nil {
+			return err
+		}
+		// reset the group
+		w.group = new(errgroup.Group)
+		w.group.SetLimit(int(concurrency))
+		return nil
+	})
+
 	return w, nil
 }
 
@@ -136,6 +161,9 @@ func (w *Worker) Run(ctx context.Context) error {
 		if !next {
 			break
 		}
+	}
+	if err := w.group.Wait(); err != nil {
+		return err
 	}
 	return ctx.Err()
 }
@@ -160,7 +188,10 @@ func (w *Worker) step() (next bool, err error) {
 func (w *Worker) processSlot(meta *blockstore.SlotMeta) error {
 	slot := meta.Slot
 	klog.V(3).Infof("Slot %d", slot)
-	return w.callback(meta)
+	w.group.Go(func() error {
+		return w.callback(meta)
+	})
+	return nil
 }
 
 func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {

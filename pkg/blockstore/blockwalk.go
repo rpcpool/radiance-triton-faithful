@@ -13,6 +13,7 @@ type BlockWalker interface {
 	SlotsAvailable() (total uint64)
 	SlotEdges() (low, high uint64)
 	Next() (meta *SlotMeta, ok bool)
+	SetOnBeforePop(func() error)
 	Close()
 
 	// Entries returns the block contents of a slot.
