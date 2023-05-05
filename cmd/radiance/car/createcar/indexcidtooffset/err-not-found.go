@@ -1,8 +1,10 @@
-package indextheslots
+package indexcidtooffset
 
 import (
 	"errors"
 	"fmt"
+
+	"github.com/ipfs/go-cid"
 )
 
 // ErrNotFound is used to signal when a Node could not be found. The specific
@@ -11,17 +13,13 @@ import (
 //
 // The Cid field can be filled in to provide additional context.
 type ErrNotFound struct {
-	Slot uint64
+	Cid cid.Cid
 }
 
 // Error implements the error interface and returns a human-readable
 // message for this error.
 func (e ErrNotFound) Error() string {
-	if e.Slot == 0 {
-		return "ipld: could not find node"
-	}
-
-	return "ipld: could not find " + fmt.Sprint(e.Slot)
+	return "ipld: could not find " + fmt.Sprint(e.Cid.String())
 }
 
 // Is allows to check whether any error is of this ErrNotFound type.

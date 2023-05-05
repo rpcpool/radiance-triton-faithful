@@ -10,31 +10,31 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ipfs/boxo/ipld/car/v2/blockstore"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-libipfs/blocks"
+	"github.com/ipld/go-car/util"
 	carv2 "github.com/ipld/go-car/v2"
 	"github.com/ipld/go-car/v2/index"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
-	"github.com/multiformats/go-varint"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"k8s.io/klog/v2"
 )
 
 type Traverser struct {
-	robs  index.Index
+	id    index.Index
 	cr    *carv2.Reader
 	graph *CARDAG
 }
 
-func NewTraverser(carPath string) (*Traverser, error) {
+func openCarReaderWithIndex(carPath string) (*carv2.Reader, index.Index, error) {
 	cr, err := carv2.OpenReader(carPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open CAR file: %w", err)
+		return nil, nil, fmt.Errorf("failed to open CAR file: %w", err)
 	}
 
 	// Get root CIDs in the CARv1 file.
 	roots, err := cr.Roots()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get roots: %w", err)
+		return nil, nil, fmt.Errorf("failed to get roots: %w", err)
 	}
 	spew.Dump(roots)
 
@@ -46,24 +46,24 @@ func NewTraverser(carPath string) (*Traverser, error) {
 		// index file does not exist, create it.
 		dr, err := cr.DataReader()
 		if err != nil {
-			return nil, fmt.Errorf("failed to get data reader: %w", err)
+			return nil, nil, fmt.Errorf("failed to get data reader: %w", err)
 		}
 		idx, err := carv2.GenerateIndex(dr)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate index: %w", err)
+			return nil, nil, fmt.Errorf("failed to generate index: %w", err)
 		}
 		indexFile, err := os.Create(indexPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create index file: %w", err)
+			return nil, nil, fmt.Errorf("failed to create index file: %w", err)
 		}
 		if _, err := index.WriteTo(idx, indexFile); err != nil {
-			return nil, fmt.Errorf("failed to write index: %w", err)
+			return nil, nil, fmt.Errorf("failed to write index: %w", err)
 		}
 		if err := indexFile.Close(); err != nil {
-			return nil, fmt.Errorf("failed to close index file: %w", err)
+			return nil, nil, fmt.Errorf("failed to close index file: %w", err)
 		}
 	} else if err != nil {
-		return nil, fmt.Errorf("failed to stat index file: %w", err)
+		return nil, nil, fmt.Errorf("failed to stat index file: %w", err)
 	} else {
 		klog.Infof("Index file %s exists", indexPath)
 	}
@@ -71,23 +71,111 @@ func NewTraverser(carPath string) (*Traverser, error) {
 	klog.Infof("Reading index file %s", indexPath)
 	indexFile, err := os.Open(indexPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open index file: %w", err)
+		return nil, nil, fmt.Errorf("failed to open index file: %w", err)
 	}
 
-	idx, err := index.ReadFrom(indexFile)
+	id, err := index.ReadFrom(indexFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read index: %w", err)
+		return nil, nil, fmt.Errorf("failed to read index: %w", err)
 	}
+	return cr, id, nil
+}
 
+func NewTraverser(carPath string) (*Traverser, error) {
+	cr, id, err := openCarReaderWithIndex(carPath)
+	if err != nil {
+		return nil, err
+	}
 	return &Traverser{
-		robs: idx,
-		cr:   cr,
+		id: id,
+		cr: cr,
 	}, nil
 }
 
 // Close closes the underlying blockstore.
 func (t *Traverser) Close() error {
 	return t.cr.Close()
+}
+
+func (t *Traverser) Get(ctx context.Context, c cid.Cid) (*blocks.BasicBlock, error) {
+	node, _, err := getRawNode(
+		func(ctx context.Context, c cid.Cid) (uint64, error) {
+			var offset uint64
+			t.id.GetAll(c, func(o uint64) bool {
+				offset = o
+				return false
+			})
+			return offset, nil
+		},
+		t.cr,
+		c,
+	)
+	return node, err
+}
+
+func (t *Traverser) GetSize(ctx context.Context, c cid.Cid) (int, error) {
+	_, size, err := getRawNode(
+		func(ctx context.Context, c cid.Cid) (uint64, error) {
+			var offset uint64
+			t.id.GetAll(c, func(o uint64) bool {
+				offset = o
+				return false
+			})
+			return offset, nil
+		},
+		t.cr,
+		c,
+	)
+	return int(size), err
+}
+
+type RawNodeGetter interface {
+	Get(ctx context.Context, c cid.Cid) (*blocks.BasicBlock, error)
+	GetSize(ctx context.Context, c cid.Cid) (int, error)
+}
+
+func getRawNode(in func(ctx context.Context, c cid.Cid) (uint64, error), cr *carv2.Reader, c cid.Cid) (*blocks.BasicBlock, uint64, error) {
+	offset, err := in(context.Background(), c)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get block: %w", err)
+	}
+	// get block from offset.
+	dr, err := cr.DataReader()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get data reader: %w", err)
+	}
+	// read block from offset.
+	dr.Seek(int64(offset), io.SeekStart)
+	br := bufio.NewReader(dr)
+
+	// sectionLen, err := varint.ReadUvarint(br)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	// // Read the CID.
+	// cidLen, gotCid, err := cid.CidFromReader(br)
+	// if err != nil {
+	// 	return nil, 0, err
+	// }
+	// remainingSectionLen := int64(sectionLen) - int64(cidLen)
+	// // Read the data.
+	// data := make([]byte, remainingSectionLen)
+	// if _, err := io.ReadFull(br, data); err != nil {
+	// 	return nil, 0, err
+	// }
+	gotCid, data, err := util.ReadNode(br)
+	if err != nil {
+		return nil, 0, err
+	}
+	// verify that the CID we read matches the one we expected.
+	if !gotCid.Equals(c) {
+		return nil, 0, fmt.Errorf("CID mismatch: expected %s, got %s", c, gotCid)
+	}
+	bl, err := blocks.NewBlockWithCid(data, c)
+	if err != nil {
+		return nil, 0, err
+	}
+	return bl, uint64(len(data)), nil
 }
 
 // BuildGraph builds the graph of the CAR file.
@@ -114,74 +202,6 @@ func (t *Traverser) TraverseBlocks(callback func(BlockDAG) bool) error {
 	return nil
 }
 
-func (t *Traverser) Get(ctx context.Context, c cid.Cid) (*RawNode, error) {
-	node, _, err := getRawNode(t.robs, t.cr, c)
-	return node, err
-}
-
-func (t *Traverser) GetSize(ctx context.Context, c cid.Cid) (int, error) {
-	_, size, err := getRawNode(t.robs, t.cr, c)
-	return int(size), err
-}
-
-type RawNode struct {
-	Linkage cidlink.Link
-	Data    []byte
-}
-
-type RawNodeGetter interface {
-	Get(ctx context.Context, c cid.Cid) (*RawNode, error)
-	GetSize(ctx context.Context, c cid.Cid) (int, error)
-}
-
-// RawData
-func (n *RawNode) RawData() []byte {
-	return n.Data
-}
-
-func getRawNode(in index.Index, cr *carv2.Reader, c cid.Cid) (*RawNode, uint64, error) {
-	var offset uint64
-	err := in.GetAll(c, func(u uint64) bool {
-		offset = u
-		return false
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get block: %w", err)
-	}
-	// get block from offset.
-	dr, err := cr.DataReader()
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to get data reader: %w", err)
-	}
-	// read block from offset.
-	dr.Seek(int64(offset), io.SeekStart)
-	br := bufio.NewReader(dr)
-
-	sectionLen, err := varint.ReadUvarint(br)
-	if err != nil {
-		return nil, 0, err
-	}
-	// Read the CID.
-	cidLen, gotCid, err := cid.CidFromReader(br)
-	if err != nil {
-		return nil, 0, err
-	}
-	remainingSectionLen := int64(sectionLen) - int64(cidLen)
-	// Read the data.
-	data := make([]byte, remainingSectionLen)
-	if _, err := io.ReadFull(br, data); err != nil {
-		return nil, 0, err
-	}
-	// verify that the CID we read matches the one we expected.
-	if !gotCid.Equals(c) {
-		return nil, 0, fmt.Errorf("CID mismatch: expected %s, got %s", c, gotCid)
-	}
-	return &RawNode{
-		Linkage: cidlink.Link{Cid: c},
-		Data:    data,
-	}, sectionLen, nil
-}
-
 func buildGraph(
 	in RawNodeGetter,
 	cr *carv2.Reader,
@@ -200,7 +220,7 @@ func buildGraph(
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	sizeDAG := NewCARSizeDAG()
+	sizeDAG := NewCARDAG()
 
 	// parse root as Epoch node.
 	epochRoot := roots[0]
@@ -213,7 +233,7 @@ func buildGraph(
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode Epoch node: %w", err)
 	}
-	sizeDAG.Epoch.Value = epoch
+	// sizeDAG.Epoch.Value = epoch
 
 	// now get the Epoch node's child nodes.
 	subsetLinks := epoch.Subsets
@@ -231,7 +251,7 @@ func buildGraph(
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode Range node: %w", err)
 		}
-		sizeDAG.Epoch.Subsets[subsetIndex].Value = subset
+		// sizeDAG.Epoch.Subsets[subsetIndex].Value = subset
 
 		// get the Range node's child nodes.
 		blockLinks := subset.Blocks
@@ -249,7 +269,7 @@ func buildGraph(
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode Slot node: %w", err)
 			}
-			sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Value = block
+			// sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Value = block
 
 			entryLinks := block.Entries
 
@@ -265,7 +285,7 @@ func buildGraph(
 				if err != nil {
 					return nil, fmt.Errorf("failed to decode Fragment node: %w", err)
 				}
-				sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Entries[entryIndex].Value = fragment
+				// sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Entries[entryIndex].Value = fragment
 
 				transactionLinks := fragment.Transactions
 
@@ -274,15 +294,15 @@ func buildGraph(
 				for transactionIndex, transactionLink := range transactionLinks {
 					sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Entries[entryIndex].Transactions[transactionIndex].CID = transactionLink.(cidlink.Link).Cid
 
-					transactionBlock, err := in.Get(ctx, transactionLink.(cidlink.Link).Cid)
-					if err != nil {
-						return nil, fmt.Errorf("failed to get Transaction node: %w", err)
-					}
-					transaction, err := iplddecoders.DecodeTransaction(transactionBlock.RawData())
-					if err != nil {
-						return nil, fmt.Errorf("failed to decode Transaction node: %w", err)
-					}
-					sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Entries[entryIndex].Transactions[transactionIndex].Value = transaction
+					// transactionBlock, err := in.Get(ctx, transactionLink.(cidlink.Link).Cid)
+					// if err != nil {
+					// 	return nil, fmt.Errorf("failed to get Transaction node: %w", err)
+					// }
+					// transaction, err := iplddecoders.DecodeTransaction(transactionBlock.RawData())
+					// if err != nil {
+					// 	return nil, fmt.Errorf("failed to decode Transaction node: %w", err)
+					// }
+					// sizeDAG.Epoch.Subsets[subsetIndex].Blocks[blockIndex].Entries[entryIndex].Transactions[transactionIndex].Value = transaction
 				}
 
 			}
@@ -292,7 +312,7 @@ func buildGraph(
 	return sizeDAG, nil
 }
 
-func NewCARSizeDAG() *CARDAG {
+func NewCARDAG() *CARDAG {
 	return &CARDAG{
 		Epoch: EpochDAG{
 			Subsets: []SubsetDAG{},
@@ -305,36 +325,36 @@ type CARDAG struct {
 }
 
 type EpochDAG struct {
-	CID   cid.Cid
-	Value *ipldbindcode.Epoch
+	CID cid.Cid
+	// Value *ipldbindcode.Epoch
 
 	Subsets []SubsetDAG
 }
 
 type SubsetDAG struct {
-	CID   cid.Cid
-	Value *ipldbindcode.Subset
+	CID cid.Cid
+	// Value *ipldbindcode.Subset
 
 	Blocks []BlockDAG
 }
 
 type BlockDAG struct {
-	CID   cid.Cid
-	Value *ipldbindcode.Block
+	CID cid.Cid
+	// Value *ipldbindcode.Block
 
 	Entries []EntryDAG
 }
 
 type EntryDAG struct {
-	CID   cid.Cid
-	Value *ipldbindcode.Entry
+	CID cid.Cid
+	// Value *ipldbindcode.Entry
 
 	Transactions []TransactionDAG
 }
 
 type TransactionDAG struct {
-	CID   cid.Cid
-	Value *ipldbindcode.Transaction
+	CID cid.Cid
+	// Value *ipldbindcode.Transaction
 }
 
 func (d *CARDAG) EachSize(robs *blockstore.ReadOnly, callback func(parents []cid.Cid, this cid.Cid, size int) error) error {

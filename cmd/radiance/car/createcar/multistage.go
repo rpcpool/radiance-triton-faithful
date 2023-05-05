@@ -16,6 +16,7 @@ import (
 	"github.com/ipld/go-ipld-prime/schema"
 	"github.com/multiformats/go-multicodec"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
+	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
@@ -25,14 +26,6 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
-)
-
-const (
-	KindTransaction = iota
-	KindEntry
-	KindBlock
-	KindSubset
-	KindEpoch
 )
 
 type Multistage struct {
@@ -151,7 +144,7 @@ func (cw *Multistage) constructBlock(
 		return nil, fmt.Errorf("failed to process entries: %w", err)
 	}
 	blockNode, err := qp.BuildMap(ipldbindcode.Prototypes.Block, -1, func(ma datamodel.MapAssembler) {
-		qp.MapEntry(ma, "kind", qp.Int(KindBlock))
+		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindBlock)))
 		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
 		qp.MapEntry(ma, "shredding",
 			qp.List(-1, func(la datamodel.ListAssembler) {
@@ -244,7 +237,7 @@ func (cw *Multistage) onEntry(
 
 			// - construct a Entry object
 			entryNode, err := qp.BuildMap(ipldbindcode.Prototypes.Entry, -1, func(ma datamodel.MapAssembler) {
-				qp.MapEntry(ma, "kind", qp.Int(KindEntry))
+				qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindEntry)))
 				qp.MapEntry(ma, "numHashes", qp.Int(int64(entry.NumHashes)))
 				qp.MapEntry(ma, "hash", qp.Bytes(entry.Hash[:]))
 
@@ -307,7 +300,7 @@ func (cw *Multistage) onTx(
 
 		// - construct a Transaction object
 		transactionNode, err := qp.BuildMap(ipldbindcode.Prototypes.Transaction, -1, func(ma datamodel.MapAssembler) {
-			qp.MapEntry(ma, "kind", qp.Int(KindTransaction))
+			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindTransaction)))
 			qp.MapEntry(ma, "data", qp.Bytes(txData))
 			qp.MapEntry(ma, "metadata", qp.Bytes(txMeta))
 		})
@@ -382,7 +375,7 @@ func (cw *Multistage) constructEpoch(
 ) (datamodel.Link, error) {
 	// - declare an Epoch object
 	epochNode, err := qp.BuildMap(ipldbindcode.Prototypes.Epoch, -1, func(ma datamodel.MapAssembler) {
-		qp.MapEntry(ma, "kind", qp.Int(KindEpoch))
+		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindEpoch)))
 		qp.MapEntry(ma, "epoch", qp.Int(int64(epoch)))
 		qp.MapEntry(ma, "subsets",
 			qp.List(-1, func(la datamodel.ListAssembler) {
@@ -436,7 +429,7 @@ func (cw *Multistage) onSubset(schedule SlotRangeSchedule, out func(datamodel.Li
 
 			// - declare a Subset object
 			subsetNode, err := qp.BuildMap(ipldbindcode.Prototypes.Subset, -1, func(ma datamodel.MapAssembler) {
-				qp.MapEntry(ma, "kind", qp.Int(KindSubset))
+				qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindSubset)))
 				qp.MapEntry(ma, "first", qp.Int(int64(first)))
 				qp.MapEntry(ma, "last", qp.Int(int64(last)))
 				qp.MapEntry(ma, "blocks",
