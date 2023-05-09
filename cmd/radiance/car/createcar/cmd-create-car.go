@@ -154,6 +154,14 @@ func run(c *cobra.Command, args []string) {
 	}
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
 	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
+
+	carFileSize, err := fileSize(finalCARFilepath)
+	if err != nil {
+		klog.Infof("Failed to get CAR file size: %s", err)
+	} else {
+		klog.Infof("CAR file size: %s", humanize.Bytes(carFileSize))
+	}
+
 	if !*flagSkipHash {
 		hashStartedAt := time.Now()
 		klog.Info("Calculating SHA256 hash of CAR file...")
@@ -234,4 +242,12 @@ func hashFileSha256(filePath string) (string, error) {
 	}
 	fmt.Println(hex.EncodeToString(h.Sum(nil)))
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
+}
+
+func fileSize(path string) (uint64, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(st.Size()), nil
 }
