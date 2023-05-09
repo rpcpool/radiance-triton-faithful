@@ -152,6 +152,11 @@ func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*confirmed_block.Transac
 	return h.DB.GetTransactionMetas(keys...)
 }
 
+func (m *BlockWalk) BlockTime(key []byte) (uint64, error) {
+	h := m.handles[0]
+	return h.DB.GetBlockTime(key)
+}
+
 // pop closes the current open DB.
 func (m *BlockWalk) pop() error {
 	if m.onBeforePop != nil {

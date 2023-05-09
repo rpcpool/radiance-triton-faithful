@@ -20,6 +20,7 @@ type DB struct {
 	CfDataShred *grocksdb.ColumnFamilyHandle
 	CfCodeShred *grocksdb.ColumnFamilyHandle
 	CfTxStatus  *grocksdb.ColumnFamilyHandle
+	CfBlockTime *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -133,6 +134,9 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if db.CfTxStatus == nil {
 		return nil, errors.New("missing column family " + CfTxStatus)
 	}
+	if db.CfBlockTime == nil {
+		return nil, errors.New("missing column family " + CfBlockTime)
+	}
 
 	return db, nil
 }
@@ -151,6 +155,8 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfCodeShred, grocksdb.NewDefaultOptions()
 	case CfTxStatus:
 		return &db.CfTxStatus, grocksdb.NewDefaultOptions()
+	case CfBlockTime:
+		return &db.CfBlockTime, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}

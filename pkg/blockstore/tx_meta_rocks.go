@@ -65,6 +65,20 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 	return result, nil
 }
 
+func (d *DB) GetBlockTime(key []byte) (uint64, error) {
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+	got, err := d.DB.GetCF(opts, d.CfBlockTime, key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get blockTime: %w", err)
+	}
+	defer got.Free()
+	if got == nil || got.Size() == 0 {
+		return 0, nil
+	}
+	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
+}
+
 func signatureFromKey(key []byte) solana.Signature {
 	return solana.SignatureFromBytes(key[8:72])
 }

@@ -135,6 +135,7 @@ type _Shredding struct {
 type SlotMeta = *_SlotMeta
 type _SlotMeta struct {
 	parent_slot _Int
+	blocktime   _Int
 }
 
 // String matches the IPLD Schema type "String".  It has string kind.

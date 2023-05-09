@@ -2,6 +2,7 @@ package createcar
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"path/filepath"
 	"runtime"
@@ -70,10 +71,17 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key[0:8], slot)
+	blockTime, err := w.walker.BlockTime(key)
+	if err != nil {
+		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
+	}
+
 	// subgraphStore will contain the subgraph for the block
 	subgraphStore := newMemoryBlockstore(w.slotMeta.Slot)
 	// - [x] construct the block
-	blockRootLink, err := constructBlock(subgraphStore, w.slotMeta, entries, metas)
+	blockRootLink, err := constructBlock(subgraphStore, w.slotMeta, blockTime, entries, metas)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
 	}
@@ -83,7 +91,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		return fmt.Errorf("failed to register block CID: %w", err)
 	}
 	// - [x] return the subgraph
-	return *subgraphStore
+	return subgraphStore
 }
 
 type memSubtreeStore struct {
@@ -165,7 +173,7 @@ func NewMultistage(
 			switch resValue := result.Value.(type) {
 			case error:
 				panic(resValue)
-			case memSubtreeStore:
+			case *memSubtreeStore:
 				subtree := resValue
 				if subtree.slot > latestSlot {
 					latestSlot = subtree.slot
@@ -272,6 +280,7 @@ func (cw *Multistage) OnSlotFromDB(
 func constructBlock(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
+	blockTime uint64,
 	entries [][]shred.Entry,
 	metas []*confirmed_block.TransactionStatusMeta,
 ) (datamodel.Link, error) {
@@ -317,8 +326,8 @@ func constructBlock(
 		)
 		qp.MapEntry(ma, "meta",
 			qp.Map(-1, func(ma datamodel.MapAssembler) {
-				// qp.MapEntry(ma, "first_shred_timestamp", qp.Int(int64(slotMeta.FirstShredTimestamp)))
 				qp.MapEntry(ma, "parent_slot", qp.Int(int64(slotMeta.ParentSlot)))
+				qp.MapEntry(ma, "blocktime", qp.Int(int64(blockTime)))
 			}),
 		)
 	})

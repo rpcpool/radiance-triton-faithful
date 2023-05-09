@@ -20,7 +20,8 @@ type Block struct {
 } representation tuple
 
 type SlotMeta struct {
-  parent_slot           Int
+  parent_slot         Int
+  blocktime           Int
 } representation tuple
 
 type Shredding struct {

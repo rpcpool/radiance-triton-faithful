@@ -28,6 +28,7 @@ type (
 )
 type SlotMeta struct {
 	Parent_slot int
+	Blocktime   int
 }
 type Shredding struct {
 	EntryEndIdx int
