@@ -23,8 +23,12 @@ type (
 		Slot      int
 		Shredding List__Shredding
 		Entries   List__Link
+		Meta      SlotMeta
 	}
 )
+type SlotMeta struct {
+	Parent_slot int
+}
 type Shredding struct {
 	EntryEndIdx int
 	ShredEndIdx int

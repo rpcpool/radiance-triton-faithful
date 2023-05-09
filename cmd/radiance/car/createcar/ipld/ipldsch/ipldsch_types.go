@@ -45,6 +45,8 @@ type typeSlab struct {
 	List__Shredding__Repr _List__Shredding__ReprPrototype
 	Shredding             _Shredding__Prototype
 	Shredding__Repr       _Shredding__ReprPrototype
+	SlotMeta              _SlotMeta__Prototype
+	SlotMeta__Repr        _SlotMeta__ReprPrototype
 	String                _String__Prototype
 	String__Repr          _String__ReprPrototype
 	Subset                _Subset__Prototype
@@ -62,6 +64,7 @@ type _Block struct {
 	slot      _Int
 	shredding _List__Shredding
 	entries   _List__Link
+	meta      _SlotMeta
 }
 
 // Bool matches the IPLD Schema type "Bool".  It has bool kind.
@@ -126,6 +129,12 @@ type Shredding = *_Shredding
 type _Shredding struct {
 	entryEndIdx _Int
 	shredEndIdx _Int
+}
+
+// SlotMeta matches the IPLD Schema type "SlotMeta".  It has struct type-kind, and may be interrogated like map kind.
+type SlotMeta = *_SlotMeta
+type _SlotMeta struct {
+	parent_slot _Int
 }
 
 // String matches the IPLD Schema type "String".  It has string kind.

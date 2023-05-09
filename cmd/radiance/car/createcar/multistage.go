@@ -315,6 +315,12 @@ func constructBlock(
 				}
 			}),
 		)
+		qp.MapEntry(ma, "meta",
+			qp.Map(-1, func(ma datamodel.MapAssembler) {
+				// qp.MapEntry(ma, "first_shred_timestamp", qp.Int(int64(slotMeta.FirstShredTimestamp)))
+				qp.MapEntry(ma, "parent_slot", qp.Int(int64(slotMeta.ParentSlot)))
+			}),
+		)
 	})
 	if err != nil {
 		return nil, err

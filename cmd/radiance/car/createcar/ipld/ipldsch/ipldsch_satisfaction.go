@@ -20,6 +20,9 @@ func (n _Block) FieldShredding() List__Shredding {
 func (n _Block) FieldEntries() List__Link {
 	return &n.entries
 }
+func (n _Block) FieldMeta() SlotMeta {
+	return &n.meta
+}
 
 type _Block__Maybe struct {
 	m schema.Maybe
@@ -60,6 +63,7 @@ var (
 	fieldName__Block_Slot      = _String{"slot"}
 	fieldName__Block_Shredding = _String{"shredding"}
 	fieldName__Block_Entries   = _String{"entries"}
+	fieldName__Block_Meta      = _String{"meta"}
 )
 var _ datamodel.Node = (Block)(&_Block{})
 var _ schema.TypedNode = (Block)(&_Block{})
@@ -77,6 +81,8 @@ func (n Block) LookupByString(key string) (datamodel.Node, error) {
 		return &n.shredding, nil
 	case "entries":
 		return &n.entries, nil
+	case "meta":
+		return &n.meta, nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
 	}
@@ -104,7 +110,7 @@ type _Block__MapItr struct {
 }
 
 func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) {
-	if itr.idx >= 4 {
+	if itr.idx >= 5 {
 		return nil, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -120,6 +126,9 @@ func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	case 3:
 		k = &fieldName__Block_Entries
 		v = &itr.n.entries
+	case 4:
+		k = &fieldName__Block_Meta
+		v = &itr.n.meta
 	default:
 		panic("unreachable")
 	}
@@ -127,14 +136,14 @@ func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	return
 }
 func (itr *_Block__MapItr) Done() bool {
-	return itr.idx >= 4
+	return itr.idx >= 5
 }
 
 func (Block) ListIterator() datamodel.ListIterator {
 	return nil
 }
 func (Block) Length() int64 {
-	return 4
+	return 5
 }
 func (Block) IsAbsent() bool {
 	return false
@@ -200,6 +209,7 @@ type _Block__Assembler struct {
 	ca_slot      _Int__Assembler
 	ca_shredding _List__Shredding__Assembler
 	ca_entries   _List__Link__Assembler
+	ca_meta      _SlotMeta__Assembler
 }
 
 func (na *_Block__Assembler) reset() {
@@ -209,6 +219,7 @@ func (na *_Block__Assembler) reset() {
 	na.ca_slot.reset()
 	na.ca_shredding.reset()
 	na.ca_entries.reset()
+	na.ca_meta.reset()
 }
 
 var (
@@ -216,7 +227,8 @@ var (
 	fieldBit__Block_Slot        = 1 << 1
 	fieldBit__Block_Shredding   = 1 << 2
 	fieldBit__Block_Entries     = 1 << 3
-	fieldBits__Block_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3
+	fieldBit__Block_Meta        = 1 << 4
+	fieldBits__Block_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3 + 1<<4
 )
 
 func (na *_Block__Assembler) BeginMap(int64) (datamodel.MapAssembler, error) {
@@ -350,6 +362,16 @@ func (ma *_Block__Assembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 4:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_meta.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -410,6 +432,16 @@ func (ma *_Block__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, e
 		ma.ca_entries.w = &ma.w.entries
 		ma.ca_entries.m = &ma.cm
 		return &ma.ca_entries, nil
+	case "meta":
+		if ma.s&fieldBit__Block_Meta != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Meta}
+		}
+		ma.s += fieldBit__Block_Meta
+		ma.state = maState_midValue
+		ma.f = 4
+		ma.ca_meta.w = &ma.w.meta
+		ma.ca_meta.m = &ma.cm
+		return &ma.ca_meta, nil
 	}
 	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.Block", Key: &_String{k}}
 }
@@ -462,6 +494,10 @@ func (ma *_Block__Assembler) AssembleValue() datamodel.NodeAssembler {
 		ma.ca_entries.w = &ma.w.entries
 		ma.ca_entries.m = &ma.cm
 		return &ma.ca_entries
+	case 4:
+		ma.ca_meta.w = &ma.w.meta
+		ma.ca_meta.m = &ma.cm
+		return &ma.ca_meta
 	default:
 		panic("unreachable")
 	}
@@ -494,6 +530,9 @@ func (ma *_Block__Assembler) Finish() error {
 		}
 		if ma.s&fieldBit__Block_Entries == 0 {
 			err.Missing = append(err.Missing, "entries")
+		}
+		if ma.s&fieldBit__Block_Meta == 0 {
+			err.Missing = append(err.Missing, "meta")
 		}
 		return err
 	}
@@ -565,6 +604,14 @@ func (ka *_Block__KeyAssembler) AssignString(k string) error {
 		ka.state = maState_expectValue
 		ka.f = 3
 		return nil
+	case "meta":
+		if ka.s&fieldBit__Block_Meta != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Meta}
+		}
+		ka.s += fieldBit__Block_Meta
+		ka.state = maState_expectValue
+		ka.f = 4
+		return nil
 	default:
 		return schema.ErrInvalidKey{TypeName: "ipldsch.Block", Key: &_String{k}}
 	}
@@ -619,6 +666,8 @@ func (n *_Block__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
 		return n.shredding.Representation(), nil
 	case 3:
 		return n.entries.Representation(), nil
+	case 4:
+		return n.meta.Representation(), nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
 	}
@@ -643,7 +692,7 @@ type _Block__ReprListItr struct {
 }
 
 func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
-	if itr.idx >= 4 {
+	if itr.idx >= 5 {
 		return -1, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -659,6 +708,9 @@ func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	case 3:
 		idx = int64(itr.idx)
 		v = itr.n.entries.Representation()
+	case 4:
+		idx = int64(itr.idx)
+		v = itr.n.meta.Representation()
 	default:
 		panic("unreachable")
 	}
@@ -666,11 +718,11 @@ func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	return
 }
 func (itr *_Block__ReprListItr) Done() bool {
-	return itr.idx >= 4
+	return itr.idx >= 5
 }
 
 func (rn *_Block__Repr) Length() int64 {
-	l := 4
+	l := 5
 	return int64(l)
 }
 func (_Block__Repr) IsAbsent() bool {
@@ -736,6 +788,7 @@ type _Block__ReprAssembler struct {
 	ca_slot      _Int__ReprAssembler
 	ca_shredding _List__Shredding__ReprAssembler
 	ca_entries   _List__Link__ReprAssembler
+	ca_meta      _SlotMeta__ReprAssembler
 }
 
 func (na *_Block__ReprAssembler) reset() {
@@ -745,6 +798,7 @@ func (na *_Block__ReprAssembler) reset() {
 	na.ca_slot.reset()
 	na.ca_shredding.reset()
 	na.ca_entries.reset()
+	na.ca_meta.reset()
 }
 func (_Block__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
 	return mixins.ListAssembler{TypeName: "ipldsch.Block.Repr"}.BeginMap(0)
@@ -874,6 +928,16 @@ func (la *_Block__ReprAssembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 4:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -889,8 +953,8 @@ func (la *_Block__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 	case laState_finished:
 		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
 	}
-	if la.f >= 4 {
-		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(4)}}
+	if la.f >= 5 {
+		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(5)}}
 	}
 	la.state = laState_midValue
 	switch la.f {
@@ -910,6 +974,10 @@ func (la *_Block__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 		la.ca_entries.w = &la.w.entries
 		la.ca_entries.m = &la.cm
 		return &la.ca_entries
+	case 4:
+		la.ca_meta.w = &la.w.meta
+		la.ca_meta.m = &la.cm
+		return &la.ca_meta
 	default:
 		panic("unreachable")
 	}
@@ -6118,6 +6186,727 @@ func (la *_Shredding__ReprAssembler) Finish() error {
 	return nil
 }
 func (la *_Shredding__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
+	panic("todo structbuilder tuplerepr valueprototype")
+}
+
+func (n _SlotMeta) FieldParent_slot() Int {
+	return &n.parent_slot
+}
+
+type _SlotMeta__Maybe struct {
+	m schema.Maybe
+	v SlotMeta
+}
+type MaybeSlotMeta = *_SlotMeta__Maybe
+
+func (m MaybeSlotMeta) IsNull() bool {
+	return m.m == schema.Maybe_Null
+}
+func (m MaybeSlotMeta) IsAbsent() bool {
+	return m.m == schema.Maybe_Absent
+}
+func (m MaybeSlotMeta) Exists() bool {
+	return m.m == schema.Maybe_Value
+}
+func (m MaybeSlotMeta) AsNode() datamodel.Node {
+	switch m.m {
+	case schema.Maybe_Absent:
+		return datamodel.Absent
+	case schema.Maybe_Null:
+		return datamodel.Null
+	case schema.Maybe_Value:
+		return m.v
+	default:
+		panic("unreachable")
+	}
+}
+func (m MaybeSlotMeta) Must() SlotMeta {
+	if !m.Exists() {
+		panic("unbox of a maybe rejected")
+	}
+	return m.v
+}
+
+var (
+	fieldName__SlotMeta_Parent_slot = _String{"parent_slot"}
+)
+var _ datamodel.Node = (SlotMeta)(&_SlotMeta{})
+var _ schema.TypedNode = (SlotMeta)(&_SlotMeta{})
+
+func (SlotMeta) Kind() datamodel.Kind {
+	return datamodel.Kind_Map
+}
+func (n SlotMeta) LookupByString(key string) (datamodel.Node, error) {
+	switch key {
+	case "parent_slot":
+		return &n.parent_slot, nil
+	default:
+		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
+	}
+}
+func (n SlotMeta) LookupByNode(key datamodel.Node) (datamodel.Node, error) {
+	ks, err := key.AsString()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupByString(ks)
+}
+func (SlotMeta) LookupByIndex(idx int64) (datamodel.Node, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.LookupByIndex(0)
+}
+func (n SlotMeta) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	return n.LookupByString(seg.String())
+}
+func (n SlotMeta) MapIterator() datamodel.MapIterator {
+	return &_SlotMeta__MapItr{n, 0}
+}
+
+type _SlotMeta__MapItr struct {
+	n   SlotMeta
+	idx int
+}
+
+func (itr *_SlotMeta__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) {
+	if itr.idx >= 1 {
+		return nil, nil, datamodel.ErrIteratorOverread{}
+	}
+	switch itr.idx {
+	case 0:
+		k = &fieldName__SlotMeta_Parent_slot
+		v = &itr.n.parent_slot
+	default:
+		panic("unreachable")
+	}
+	itr.idx++
+	return
+}
+func (itr *_SlotMeta__MapItr) Done() bool {
+	return itr.idx >= 1
+}
+
+func (SlotMeta) ListIterator() datamodel.ListIterator {
+	return nil
+}
+func (SlotMeta) Length() int64 {
+	return 1
+}
+func (SlotMeta) IsAbsent() bool {
+	return false
+}
+func (SlotMeta) IsNull() bool {
+	return false
+}
+func (SlotMeta) AsBool() (bool, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsBool()
+}
+func (SlotMeta) AsInt() (int64, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsInt()
+}
+func (SlotMeta) AsFloat() (float64, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsFloat()
+}
+func (SlotMeta) AsString() (string, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsString()
+}
+func (SlotMeta) AsBytes() ([]byte, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsBytes()
+}
+func (SlotMeta) AsLink() (datamodel.Link, error) {
+	return mixins.Map{TypeName: "ipldsch.SlotMeta"}.AsLink()
+}
+func (SlotMeta) Prototype() datamodel.NodePrototype {
+	return _SlotMeta__Prototype{}
+}
+
+type _SlotMeta__Prototype struct{}
+
+func (_SlotMeta__Prototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _SlotMeta__Builder
+	nb.Reset()
+	return &nb
+}
+
+type _SlotMeta__Builder struct {
+	_SlotMeta__Assembler
+}
+
+func (nb *_SlotMeta__Builder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_SlotMeta__Builder) Reset() {
+	var w _SlotMeta
+	var m schema.Maybe
+	*nb = _SlotMeta__Builder{_SlotMeta__Assembler{w: &w, m: &m}}
+}
+
+type _SlotMeta__Assembler struct {
+	w     *_SlotMeta
+	m     *schema.Maybe
+	state maState
+	s     int
+	f     int
+
+	cm             schema.Maybe
+	ca_parent_slot _Int__Assembler
+}
+
+func (na *_SlotMeta__Assembler) reset() {
+	na.state = maState_initial
+	na.s = 0
+	na.ca_parent_slot.reset()
+}
+
+var (
+	fieldBit__SlotMeta_Parent_slot = 1 << 0
+	fieldBits__SlotMeta_sufficient = 0 + 1<<0
+)
+
+func (na *_SlotMeta__Assembler) BeginMap(int64) (datamodel.MapAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if na.w == nil {
+		na.w = &_SlotMeta{}
+	}
+	return na, nil
+}
+func (_SlotMeta__Assembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.BeginList(0)
+}
+func (na *_SlotMeta__Assembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_SlotMeta__Assembler) AssignBool(bool) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignBool(false)
+}
+func (_SlotMeta__Assembler) AssignInt(int64) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignInt(0)
+}
+func (_SlotMeta__Assembler) AssignFloat(float64) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignFloat(0)
+}
+func (_SlotMeta__Assembler) AssignString(string) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignString("")
+}
+func (_SlotMeta__Assembler) AssignBytes([]byte) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignBytes(nil)
+}
+func (_SlotMeta__Assembler) AssignLink(datamodel.Link) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.SlotMeta"}.AssignLink(nil)
+}
+func (na *_SlotMeta__Assembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_SlotMeta); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		if na.w == nil {
+			na.w = v2
+			*na.m = schema.Maybe_Value
+			return nil
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_Map {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.SlotMeta", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustMap, ActualKind: v.Kind()}
+	}
+	itr := v.MapIterator()
+	for !itr.Done() {
+		k, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleKey().AssignNode(k); err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_SlotMeta__Assembler) Prototype() datamodel.NodePrototype {
+	return _SlotMeta__Prototype{}
+}
+func (ma *_SlotMeta__Assembler) valueFinishTidy() bool {
+	switch ma.f {
+	case 0:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_parent_slot.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
+	default:
+		panic("unreachable")
+	}
+}
+func (ma *_SlotMeta__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, error) {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: AssembleEntry cannot be called when in the middle of assembling another key")
+	case maState_expectValue:
+		panic("invalid state: AssembleEntry cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: AssembleEntry cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: AssembleEntry cannot be called on an assembler that's already finished")
+	}
+	switch k {
+	case "parent_slot":
+		if ma.s&fieldBit__SlotMeta_Parent_slot != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__SlotMeta_Parent_slot}
+		}
+		ma.s += fieldBit__SlotMeta_Parent_slot
+		ma.state = maState_midValue
+		ma.f = 0
+		ma.ca_parent_slot.w = &ma.w.parent_slot
+		ma.ca_parent_slot.m = &ma.cm
+		return &ma.ca_parent_slot, nil
+	}
+	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.SlotMeta", Key: &_String{k}}
+}
+func (ma *_SlotMeta__Assembler) AssembleKey() datamodel.NodeAssembler {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: AssembleKey cannot be called when in the middle of assembling another key")
+	case maState_expectValue:
+		panic("invalid state: AssembleKey cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: AssembleKey cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: AssembleKey cannot be called on an assembler that's already finished")
+	}
+	ma.state = maState_midKey
+	return (*_SlotMeta__KeyAssembler)(ma)
+}
+func (ma *_SlotMeta__Assembler) AssembleValue() datamodel.NodeAssembler {
+	switch ma.state {
+	case maState_initial:
+		panic("invalid state: AssembleValue cannot be called when no key is primed")
+	case maState_midKey:
+		panic("invalid state: AssembleValue cannot be called when in the middle of assembling a key")
+	case maState_expectValue:
+		// carry on
+	case maState_midValue:
+		panic("invalid state: AssembleValue cannot be called when in the middle of assembling another value")
+	case maState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	ma.state = maState_midValue
+	switch ma.f {
+	case 0:
+		ma.ca_parent_slot.w = &ma.w.parent_slot
+		ma.ca_parent_slot.m = &ma.cm
+		return &ma.ca_parent_slot
+	default:
+		panic("unreachable")
+	}
+}
+func (ma *_SlotMeta__Assembler) Finish() error {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: Finish cannot be called when in the middle of assembling a key")
+	case maState_expectValue:
+		panic("invalid state: Finish cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	if ma.s&fieldBits__SlotMeta_sufficient != fieldBits__SlotMeta_sufficient {
+		err := schema.ErrMissingRequiredField{Missing: make([]string, 0)}
+		if ma.s&fieldBit__SlotMeta_Parent_slot == 0 {
+			err.Missing = append(err.Missing, "parent_slot")
+		}
+		return err
+	}
+	ma.state = maState_finished
+	*ma.m = schema.Maybe_Value
+	return nil
+}
+func (ma *_SlotMeta__Assembler) KeyPrototype() datamodel.NodePrototype {
+	return _String__Prototype{}
+}
+func (ma *_SlotMeta__Assembler) ValuePrototype(k string) datamodel.NodePrototype {
+	panic("todo structbuilder mapassembler valueprototype")
+}
+
+type _SlotMeta__KeyAssembler _SlotMeta__Assembler
+
+func (_SlotMeta__KeyAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.BeginMap(0)
+}
+func (_SlotMeta__KeyAssembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.BeginList(0)
+}
+func (na *_SlotMeta__KeyAssembler) AssignNull() error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignNull()
+}
+func (_SlotMeta__KeyAssembler) AssignBool(bool) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignBool(false)
+}
+func (_SlotMeta__KeyAssembler) AssignInt(int64) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignInt(0)
+}
+func (_SlotMeta__KeyAssembler) AssignFloat(float64) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignFloat(0)
+}
+func (ka *_SlotMeta__KeyAssembler) AssignString(k string) error {
+	if ka.state != maState_midKey {
+		panic("misuse: KeyAssembler held beyond its valid lifetime")
+	}
+	switch k {
+	case "parent_slot":
+		if ka.s&fieldBit__SlotMeta_Parent_slot != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__SlotMeta_Parent_slot}
+		}
+		ka.s += fieldBit__SlotMeta_Parent_slot
+		ka.state = maState_expectValue
+		ka.f = 0
+		return nil
+	default:
+		return schema.ErrInvalidKey{TypeName: "ipldsch.SlotMeta", Key: &_String{k}}
+	}
+}
+func (_SlotMeta__KeyAssembler) AssignBytes([]byte) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignBytes(nil)
+}
+func (_SlotMeta__KeyAssembler) AssignLink(datamodel.Link) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.SlotMeta.KeyAssembler"}.AssignLink(nil)
+}
+func (ka *_SlotMeta__KeyAssembler) AssignNode(v datamodel.Node) error {
+	if v2, err := v.AsString(); err != nil {
+		return err
+	} else {
+		return ka.AssignString(v2)
+	}
+}
+func (_SlotMeta__KeyAssembler) Prototype() datamodel.NodePrototype {
+	return _String__Prototype{}
+}
+func (SlotMeta) Type() schema.Type {
+	return nil /*TODO:typelit*/
+}
+func (n SlotMeta) Representation() datamodel.Node {
+	return (*_SlotMeta__Repr)(n)
+}
+
+type _SlotMeta__Repr _SlotMeta
+
+var _ datamodel.Node = &_SlotMeta__Repr{}
+
+func (_SlotMeta__Repr) Kind() datamodel.Kind {
+	return datamodel.Kind_List
+}
+func (_SlotMeta__Repr) LookupByString(string) (datamodel.Node, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.LookupByString("")
+}
+func (n *_SlotMeta__Repr) LookupByNode(key datamodel.Node) (datamodel.Node, error) {
+	ki, err := key.AsInt()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupByIndex(ki)
+}
+func (n *_SlotMeta__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
+	switch idx {
+	case 0:
+		return n.parent_slot.Representation(), nil
+	default:
+		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
+	}
+}
+func (n _SlotMeta__Repr) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	i, err := seg.Index()
+	if err != nil {
+		return nil, datamodel.ErrInvalidSegmentForList{TypeName: "ipldsch.SlotMeta.Repr", TroubleSegment: seg, Reason: err}
+	}
+	return n.LookupByIndex(i)
+}
+func (_SlotMeta__Repr) MapIterator() datamodel.MapIterator {
+	return nil
+}
+func (n *_SlotMeta__Repr) ListIterator() datamodel.ListIterator {
+	return &_SlotMeta__ReprListItr{n, 0}
+}
+
+type _SlotMeta__ReprListItr struct {
+	n   *_SlotMeta__Repr
+	idx int
+}
+
+func (itr *_SlotMeta__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
+	if itr.idx >= 1 {
+		return -1, nil, datamodel.ErrIteratorOverread{}
+	}
+	switch itr.idx {
+	case 0:
+		idx = int64(itr.idx)
+		v = itr.n.parent_slot.Representation()
+	default:
+		panic("unreachable")
+	}
+	itr.idx++
+	return
+}
+func (itr *_SlotMeta__ReprListItr) Done() bool {
+	return itr.idx >= 1
+}
+
+func (rn *_SlotMeta__Repr) Length() int64 {
+	l := 1
+	return int64(l)
+}
+func (_SlotMeta__Repr) IsAbsent() bool {
+	return false
+}
+func (_SlotMeta__Repr) IsNull() bool {
+	return false
+}
+func (_SlotMeta__Repr) AsBool() (bool, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsBool()
+}
+func (_SlotMeta__Repr) AsInt() (int64, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsInt()
+}
+func (_SlotMeta__Repr) AsFloat() (float64, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsFloat()
+}
+func (_SlotMeta__Repr) AsString() (string, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsString()
+}
+func (_SlotMeta__Repr) AsBytes() ([]byte, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsBytes()
+}
+func (_SlotMeta__Repr) AsLink() (datamodel.Link, error) {
+	return mixins.List{TypeName: "ipldsch.SlotMeta.Repr"}.AsLink()
+}
+func (_SlotMeta__Repr) Prototype() datamodel.NodePrototype {
+	return _SlotMeta__ReprPrototype{}
+}
+
+type _SlotMeta__ReprPrototype struct{}
+
+func (_SlotMeta__ReprPrototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _SlotMeta__ReprBuilder
+	nb.Reset()
+	return &nb
+}
+
+type _SlotMeta__ReprBuilder struct {
+	_SlotMeta__ReprAssembler
+}
+
+func (nb *_SlotMeta__ReprBuilder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_SlotMeta__ReprBuilder) Reset() {
+	var w _SlotMeta
+	var m schema.Maybe
+	*nb = _SlotMeta__ReprBuilder{_SlotMeta__ReprAssembler{w: &w, m: &m}}
+}
+
+type _SlotMeta__ReprAssembler struct {
+	w     *_SlotMeta
+	m     *schema.Maybe
+	state laState
+	f     int
+
+	cm             schema.Maybe
+	ca_parent_slot _Int__ReprAssembler
+}
+
+func (na *_SlotMeta__ReprAssembler) reset() {
+	na.state = laState_initial
+	na.f = 0
+	na.ca_parent_slot.reset()
+}
+func (_SlotMeta__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.BeginMap(0)
+}
+func (na *_SlotMeta__ReprAssembler) BeginList(int64) (datamodel.ListAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if na.w == nil {
+		na.w = &_SlotMeta{}
+	}
+	return na, nil
+}
+func (na *_SlotMeta__ReprAssembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr.Repr"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_SlotMeta__ReprAssembler) AssignBool(bool) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignBool(false)
+}
+func (_SlotMeta__ReprAssembler) AssignInt(int64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignInt(0)
+}
+func (_SlotMeta__ReprAssembler) AssignFloat(float64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignFloat(0)
+}
+func (_SlotMeta__ReprAssembler) AssignString(string) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignString("")
+}
+func (_SlotMeta__ReprAssembler) AssignBytes([]byte) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignBytes(nil)
+}
+func (_SlotMeta__ReprAssembler) AssignLink(datamodel.Link) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.SlotMeta.Repr"}.AssignLink(nil)
+}
+func (na *_SlotMeta__ReprAssembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_SlotMeta); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		if na.w == nil {
+			na.w = v2
+			*na.m = schema.Maybe_Value
+			return nil
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_List {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.SlotMeta.Repr", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustList, ActualKind: v.Kind()}
+	}
+	itr := v.ListIterator()
+	for !itr.Done() {
+		_, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_SlotMeta__ReprAssembler) Prototype() datamodel.NodePrototype {
+	return _SlotMeta__ReprPrototype{}
+}
+func (la *_SlotMeta__ReprAssembler) valueFinishTidy() bool {
+	switch la.f {
+	case 0:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
+	default:
+		panic("unreachable")
+	}
+}
+func (la *_SlotMeta__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: AssembleValue cannot be called when still in the middle of assembling the previous value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	if la.f >= 1 {
+		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(1)}}
+	}
+	la.state = laState_midValue
+	switch la.f {
+	case 0:
+		la.ca_parent_slot.w = &la.w.parent_slot
+		la.ca_parent_slot.m = &la.cm
+		return &la.ca_parent_slot
+	default:
+		panic("unreachable")
+	}
+}
+func (la *_SlotMeta__ReprAssembler) Finish() error {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	la.state = laState_finished
+	*la.m = schema.Maybe_Value
+	return nil
+}
+func (la *_SlotMeta__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
 	panic("todo structbuilder tuplerepr valueprototype")
 }
 
