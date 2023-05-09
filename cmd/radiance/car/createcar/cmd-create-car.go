@@ -3,7 +3,9 @@
 package createcar
 
 import (
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,6 +15,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
 	"github.com/linxGnu/grocksdb"
+	"github.com/minio/sha256-simd"
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
@@ -37,6 +40,7 @@ var (
 	flagDBs              = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
 	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
 	flagLimitSlots       = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
+	flagSkipHash         = flags.Bool("skip-hash", false, "Skip hashing the CAR file")
 )
 
 func init() {
@@ -50,15 +54,24 @@ func init() {
 }
 
 func run(c *cobra.Command, args []string) {
+	{
+		// try using the hardware-accelerated SHA256 implementation.
+		// if it fails, better to fail early than to fail after processing.
+		h := sha256.New()
+		h.Write([]byte("test"))
+		if hex.EncodeToString(h.Sum(nil)) != "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" {
+			klog.Exitf("SHA256 hardware-acceleration is not working")
+		}
+	}
 	start := time.Now()
 
 	defer func() {
 		timeTaken := time.Since(start)
 		klog.Infof("Time taken: %s", timeTaken)
 	}()
-	workers := *flagWorkers
-	if workers == 0 {
-		workers = uint(runtime.NumCPU())
+	numWorkers := *flagWorkers
+	if numWorkers == 0 {
+		numWorkers = uint(runtime.NumCPU())
 	}
 
 	finalCARFilepath := filepath.Clean(*flagOut)
@@ -94,65 +107,44 @@ func run(c *cobra.Command, args []string) {
 	}
 	defer walker.Close()
 
-	multi, err := NewMultistage(finalCARFilepath)
+	multi, err := NewMultistage(
+		finalCARFilepath,
+		numWorkers,
+		walker,
+	)
 	if err != nil {
 		panic(err)
 	}
-	multi.SetConcurrency(workers)
 
-	// TODO:
-	// - create a slot tracker
-	// - iterate over all slots in the DB, and
-	//   - create a temporary CAR file for each slot and write all entries to it (appropriately encoded)
-	//   - mark the new status of the slot in the tracker
-	// - once all slots are processed, iterate over the tracker and check that all slots are marked as "done"
-	// - if not, then we have a problem
-	// - if yes, then:
-	//   - create a new CAR file for the entire DB
-	//   - iterate over all slot CAR files and create the DAG (nested callbacks)
+	latestSlot := uint64(0)
 	callback := func(slotMeta *blockstore.SlotMeta) error {
-		slot := slotMeta.Slot
-
-		entries, err := walker.Entries(slotMeta)
-		if err != nil {
-			return err
+		if slotMeta.Slot > latestSlot {
+			latestSlot = slotMeta.Slot
+		} else if slotMeta.Slot < latestSlot {
+			panic(fmt.Errorf("slot %d is out of order (latest slot: %d)", slotMeta.Slot, latestSlot))
+		} else {
+			// slotMeta.Slot == latestSlot
+			panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
 		}
-
-		transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
-		if err != nil {
-			return err
-		}
-
-		txMetas, err := walker.TransactionMetas(transactionMetaKeys...)
-		if err != nil {
-			return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
-		}
-
-		_, err = multi.OnBlock(slotMeta, entries, txMetas)
+		err = multi.OnSlotFromDB(slotMeta)
 		if err != nil {
 			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 		}
-		for _, txMeta := range txMetas {
-			if txMeta != nil {
-				txMeta = nil
-			}
-		}
 		return nil
 	}
-	w, err := NewIterator(
+	wrk, err := NewIterator(
 		epoch,
 		walker,
 		*flagRequireFullEpoch,
 		*flagLimitSlots,
 		callback,
-		workers,
 	)
 	if err != nil {
 		klog.Exitf("Failed to init cargen: %s", err)
 	}
 
 	ctx := c.Context()
-	if err = w.Run(ctx); err != nil {
+	if err = wrk.Run(ctx); err != nil {
 		klog.Exitf("FATAL: %s", err)
 	}
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
@@ -160,11 +152,23 @@ func run(c *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
-	klog.Infof("Root of the DAG (epoch CID): %s", epochCID)
-	klog.Info("DONE")
+	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
+	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
+	if !*flagSkipHash {
+		hashStartedAt := time.Now()
+		klog.Info("Calculating SHA256 hash of CAR file...")
+		gotHash, err := hashFileSha256(finalCARFilepath)
+		if err != nil {
+			klog.Infof("Failed to hash CAR file: %s", err)
+		} else {
+			klog.Infof("CAR file SHA256 hash: %s (took %s)", gotHash, time.Since(hashStartedAt))
+		}
+	} else {
+		klog.Info("Skipping hashing the CAR file")
+	}
 
 	timeTaken := time.Since(start)
-	klog.Infof("Time taken: %s", timeTaken)
+	klog.Infof("Total time taken: %s", timeTaken)
 	{
 		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
@@ -215,4 +219,19 @@ func slotBounds(db *blockstore.DB) (low uint64, high uint64, ok bool) {
 	high, ok = blockstore.ParseSlotKey(iter.Key().Data())
 	high++
 	return
+}
+
+func hashFileSha256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	fmt.Println(hex.EncodeToString(h.Sum(nil)))
+	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
