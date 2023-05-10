@@ -9,7 +9,6 @@ import (
 	"github.com/vbauerster/mpb/v8"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"k8s.io/klog/v2"
 )
 
@@ -22,7 +21,7 @@ import (
 const MaxCARSize = 1 << 35
 
 type Worker struct {
-	walk  blockstore.BlockWalkI
+	walk  blockstore.BlockWalker
 	epoch uint64
 	stop  uint64 // exclusive
 
@@ -33,7 +32,7 @@ type Worker struct {
 	numTxns             *atomic.Uint64
 }
 
-type Callback func(slotMeta *blockstore.SlotMeta, entries [][]shred.Entry, txMetas []*confirmed_block.TransactionStatusMeta) error
+type Callback func(slotMeta *blockstore.SlotMeta) error
 
 // uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
 func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bool {
@@ -46,7 +45,7 @@ func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bo
 
 func NewIterator(
 	epoch uint64,
-	walk blockstore.BlockWalkI,
+	walk blockstore.BlockWalker,
 	requireFullEpoch bool,
 	limitSlots uint64,
 	callback Callback,
@@ -120,6 +119,7 @@ func NewIterator(
 		totalSlotsToProcess: totalSlotsToProcess,
 		callback:            callback,
 	}
+
 	return w, nil
 }
 
@@ -150,11 +150,7 @@ func (w *Worker) step() (next bool, err error) {
 	if meta.Slot > w.stop {
 		return false, nil
 	}
-	entries, err := w.walk.Entries(meta)
-	if err != nil {
-		return false, fmt.Errorf("failed to get entry at slot %d: %w", meta.Slot, err)
-	}
-	if err := w.processSlot(meta, entries); err != nil {
+	if err := w.processSlot(meta); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -162,30 +158,27 @@ func (w *Worker) step() (next bool, err error) {
 
 // processSlot writes a filled Solana slot to the CAR.
 // Creates multiple IPLD blocks internally.
-func (w *Worker) processSlot(meta *blockstore.SlotMeta, entries [][]shred.Entry) error {
+func (w *Worker) processSlot(meta *blockstore.SlotMeta) error {
 	slot := meta.Slot
-
-	transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
-	if err != nil {
-		return err
-	}
-
-	txMetas, err := w.walk.TransactionMetas(transactionMetaKeys...)
-	if err != nil {
-		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
-	}
-
 	klog.V(3).Infof("Slot %d", slot)
-	return w.callback(meta, entries, txMetas)
+	return w.callback(meta)
 }
 
 func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {
-	keys := make([][]byte, 0)
+	ln := 0
+	for _, batch := range entries {
+		for _, entry := range batch {
+			ln += len(entry.Txns)
+		}
+	}
+	keys := make([][]byte, ln)
+	index := 0
 	for _, batch := range entries {
 		for _, entry := range batch {
 			for _, tx := range entry.Txns {
 				firstSig := tx.Signatures[0]
-				keys = append(keys, blockstore.FormatTxMetadataKey(slot, firstSig))
+				keys[index] = blockstore.FormatTxMetadataKey(slot, firstSig)
+				index++
 			}
 		}
 	}

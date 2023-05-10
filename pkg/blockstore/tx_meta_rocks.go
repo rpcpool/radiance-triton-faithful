@@ -5,6 +5,7 @@ package blockstore
 import (
 	"encoding/binary"
 	"fmt"
+	"sync"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/golang/protobuf/proto"
@@ -23,8 +24,27 @@ func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	return key
 }
 
+var readOptionsPool = sync.Pool{
+	New: func() interface{} {
+		opts := grocksdb.NewDefaultReadOptions()
+		opts.SetVerifyChecksums(false)
+		opts.SetFillCache(false)
+		return opts
+	},
+}
+
+func getReadOptions() *grocksdb.ReadOptions {
+	return readOptionsPool.Get().(*grocksdb.ReadOptions)
+}
+
+func putReadOptions(opts *grocksdb.ReadOptions) {
+	readOptionsPool.Put(opts)
+}
+
 func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error) {
-	got, err := d.DB.MultiGetCF(grocksdb.NewDefaultReadOptions(), d.CfTxStatus, keys...)
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tx meta: %w", err)
 	}
@@ -43,6 +63,20 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 		result[i] = txMeta
 	}
 	return result, nil
+}
+
+func (d *DB) GetBlockTime(key []byte) (uint64, error) {
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+	got, err := d.DB.GetCF(opts, d.CfBlockTime, key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get blockTime: %w", err)
+	}
+	defer got.Free()
+	if got == nil || got.Size() == 0 {
+		return 0, nil
+	}
+	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
 }
 
 func signatureFromKey(key []byte) solana.Signature {

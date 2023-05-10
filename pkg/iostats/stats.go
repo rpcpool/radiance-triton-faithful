@@ -20,14 +20,22 @@ func GetDiskReadBytes() (uint64, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "read_bytes:") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				return 0, fmt.Errorf("invalid read_bytes line: %s", line)
+			v, err := getField1AsUint64(line)
+			if err != nil {
+				return 0, err
 			}
-			return strconv.ParseUint(fields[1], 10, 64)
+			return v, nil
 		}
 	}
 	return 0, fmt.Errorf("read_bytes not found")
+}
+
+func getField1AsUint64(line string) (uint64, error) {
+	fields := strings.Fields(line)
+	if len(fields) != 2 {
+		return 0, fmt.Errorf("invalid line: %s", line)
+	}
+	return strconv.ParseUint(fields[1], 10, 64)
 }
 
 // GetDiskWriteBytes returns how much this process has written to disk.
@@ -42,11 +50,11 @@ func GetDiskWriteBytes() (uint64, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "write_bytes:") {
-			fields := strings.Fields(line)
-			if len(fields) != 2 {
-				return 0, fmt.Errorf("invalid write_bytes line: %s", line)
+			v, err := getField1AsUint64(line)
+			if err != nil {
+				return 0, err
 			}
-			return strconv.ParseUint(fields[1], 10, 64)
+			return v, nil
 		}
 	}
 	return 0, fmt.Errorf("write_bytes not found")

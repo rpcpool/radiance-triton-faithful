@@ -5,6 +5,7 @@ package blockstore
 import (
 	"errors"
 	"fmt"
+	"runtime"
 
 	"github.com/linxGnu/grocksdb"
 )
@@ -19,6 +20,7 @@ type DB struct {
 	CfDataShred *grocksdb.ColumnFamilyHandle
 	CfCodeShred *grocksdb.ColumnFamilyHandle
 	CfTxStatus  *grocksdb.ColumnFamilyHandle
+	CfBlockTime *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -42,6 +44,22 @@ func OpenSecondary(path string, secondaryPath string) (*DB, error) {
 func open(path string, secondaryPath string) (*DB, error) {
 	// List all available column families
 	dbOpts := grocksdb.NewDefaultOptions()
+	// dbOpts.SetAllowMmapReads(true)
+	// // dbOpts.SetUseDirectReads(true)
+	// dbOpts.SetUseDirectIOForFlushAndCompaction(true)
+	// dbOpts.SetMaxFileOpeningThreads(2000)
+	// dbOpts.AvoidUnnecessaryBlockingIO(true)
+	// dbOpts.PrepareForBulkLoad()
+	//
+	// dbOpts.SetMemtableVectorRep()
+	dbOpts.IncreaseParallelism(runtime.NumCPU())
+	dbOpts.SetMaxOpenFiles(-1)
+	// dbOpts.SetUseAdaptiveMutex(true)
+	dbOpts.SetAllowConcurrentMemtableWrites(false)
+	dbOpts.OptimizeForPointLookup(300)
+
+	defer dbOpts.Destroy()
+
 	allCfNames, err := grocksdb.ListColumnFamilies(dbOpts, path)
 	if err != nil {
 		return nil, err
@@ -116,6 +134,9 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if db.CfTxStatus == nil {
 		return nil, errors.New("missing column family " + CfTxStatus)
 	}
+	if db.CfBlockTime == nil {
+		return nil, errors.New("missing column family " + CfBlockTime)
+	}
 
 	return db, nil
 }
@@ -134,6 +155,8 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfCodeShred, grocksdb.NewDefaultOptions()
 	case CfTxStatus:
 		return &db.CfTxStatus, grocksdb.NewDefaultOptions()
+	case CfBlockTime:
+		return &db.CfBlockTime, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}

@@ -17,7 +17,8 @@ type BlockWalk struct {
 	handles       []WalkHandle // sorted
 	shredRevision int
 
-	root *grocksdb.Iterator
+	root        *grocksdb.Iterator
+	onBeforePop func() error
 }
 
 func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
@@ -28,6 +29,10 @@ func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
 		handles:       handles,
 		shredRevision: shredRevision,
 	}, nil
+}
+
+func (m *BlockWalk) SetOnBeforePop(f func() error) {
+	m.onBeforePop = f
 }
 
 // Seek skips ahead to a specific slot.
@@ -83,14 +88,20 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	}
 	h := m.handles[0]
 	if m.root == nil {
+		opts := getReadOptions()
+		defer putReadOptions(opts)
 		// Open Next database
-		m.root = h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), h.DB.CfRoot)
+		m.root = h.DB.DB.NewIteratorCF(opts, h.DB.CfRoot)
 		key := MakeSlotKey(h.Start)
 		m.root.Seek(key[:])
 	}
 	if !m.root.Valid() {
 		// Close current DB and go to Next
-		m.pop()
+		err := m.pop()
+		if err != nil {
+			klog.Exitf("Failed to pop: %s", err)
+			// TODO: return error instead of exiting
+		}
 		return m.Next() // TODO tail recursion optimization?
 	}
 
@@ -141,12 +152,24 @@ func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*confirmed_block.Transac
 	return h.DB.GetTransactionMetas(keys...)
 }
 
+func (m *BlockWalk) BlockTime(key []byte) (uint64, error) {
+	h := m.handles[0]
+	return h.DB.GetBlockTime(key)
+}
+
 // pop closes the current open DB.
-func (m *BlockWalk) pop() {
+func (m *BlockWalk) pop() error {
+	if m.onBeforePop != nil {
+		err := m.onBeforePop()
+		if err != nil {
+			return fmt.Errorf("onBeforePop: %w", err)
+		}
+	}
 	m.root.Close()
 	m.root = nil
 	m.handles[0].DB.Close()
 	m.handles = m.handles[1:]
+	return nil
 }
 
 func (m *BlockWalk) Close() {
@@ -192,7 +215,10 @@ func sortWalkHandles(h []WalkHandle, shredRevision int) error {
 
 // getLowestCompleteSlot finds the lowest slot in a RocksDB from which slots are complete onwards.
 func getLowestCompletedSlot(d *DB, shredRevision int) (uint64, error) {
-	iter := d.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), d.CfMeta)
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	iter := d.DB.NewIteratorCF(opts, d.CfMeta)
 	defer iter.Close()
 	iter.SeekToFirst()
 

@@ -1,4 +1,4 @@
-package indextheslots
+package indexslottocid
 
 import (
 	"context"

@@ -17,23 +17,26 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/google/gopacket v1.1.19
 	github.com/google/nftables v0.1.0
+	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
 	github.com/ipfs/boxo v0.8.1
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ipfs-blockstore v1.3.0
 	github.com/ipfs/go-ipld-cbor v0.0.6
+	github.com/ipfs/go-libipfs v0.6.2
 	github.com/ipld/go-car v0.6.0
 	github.com/ipld/go-car/v2 v2.10.0
 	github.com/ipld/go-ipld-prime v0.20.0
 	github.com/ipld/go-storethehash v0.3.13
 	github.com/klauspost/compress v1.16.0
-	github.com/linxGnu/grocksdb v1.7.16-0.20230303082518-587b6c4f0dab
+	github.com/linxGnu/grocksdb v1.7.16
 	github.com/lucas-clemente/quic-go v0.29.1
 	github.com/mattn/go-isatty v0.0.17
 	github.com/minio/sha256-simd v1.0.0
 	github.com/mr-tron/base58 v1.2.0
 	github.com/multiformats/go-multicodec v0.8.1
 	github.com/multiformats/go-multihash v0.2.1
+	github.com/multiformats/go-varint v0.0.7
 	github.com/novifinancial/serde-reflection/serde-generate/runtime/golang v0.0.0-20220519162058-e5cd3c3b3f3a
 	github.com/prometheus/client_golang v1.14.0
 	github.com/segmentio/textio v1.2.0
@@ -41,6 +44,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.2
+	github.com/tejzpr/ordered-concurrently/v3 v3.0.1
 	github.com/twmb/franz-go v1.12.1
 	github.com/vbauerster/mpb/v8 v8.2.1
 	golang.org/x/crypto v0.7.0
@@ -95,7 +99,6 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-ipld-format v0.4.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
-	github.com/ipfs/go-libipfs v0.6.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-log/v2 v2.5.1 // indirect
 	github.com/ipfs/go-merkledag v0.10.0 // indirect
@@ -121,7 +124,6 @@ require (
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
 	github.com/multiformats/go-multibase v0.1.1 // indirect
-	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
 	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.24.0 // indirect

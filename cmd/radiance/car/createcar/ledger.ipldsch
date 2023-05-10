@@ -16,6 +16,12 @@ type Block struct {
   slot      Int
   shredding [ Shredding ]
   entries   [ Link ] # [ &Entry ]
+  meta      SlotMeta
+} representation tuple
+
+type SlotMeta struct {
+  parent_slot         Int
+  blocktime           Int
 } representation tuple
 
 type Shredding struct {

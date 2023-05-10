@@ -11,6 +11,8 @@ import (
 // MaxRoot returns the last known root slot.
 func (d *DB) MaxRoot() (uint64, error) {
 	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
 	iter := d.DB.NewIteratorCF(opts, d.CfRoot)
 	defer iter.Close()
 	iter.SeekToLast()

@@ -5,14 +5,15 @@ import (
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 )
 
-// BlockWalkI abstracts iterators over block data.
+// BlockWalker abstracts iterators over block data.
 //
 // The main (and only) implementation in this package is BlockWalk.
-type BlockWalkI interface {
+type BlockWalker interface {
 	Seek(slot uint64) (ok bool)
 	SlotsAvailable() (total uint64)
 	SlotEdges() (low, high uint64)
 	Next() (meta *SlotMeta, ok bool)
+	SetOnBeforePop(func() error)
 	Close()
 
 	// Entries returns the block contents of a slot.
