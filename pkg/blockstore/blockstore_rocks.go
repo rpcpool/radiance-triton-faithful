@@ -134,9 +134,10 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if db.CfTxStatus == nil {
 		return nil, errors.New("missing column family " + CfTxStatus)
 	}
-	if db.CfBlockTime == nil {
-		return nil, errors.New("missing column family " + CfBlockTime)
-	}
+	// Keep this optional for now
+	// if db.CfBlockTime == nil {
+	// 	return nil, errors.New("missing column family " + CfBlockTime)
+	// }
 
 	return db, nil
 }

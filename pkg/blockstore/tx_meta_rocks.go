@@ -66,6 +66,9 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 }
 
 func (d *DB) GetBlockTime(key []byte) (uint64, error) {
+	if d.CfBlockTime == nil {
+		return 0, nil
+	}
 	opts := getReadOptions()
 	defer putReadOptions(opts)
 	got, err := d.DB.GetCF(opts, d.CfBlockTime, key)
