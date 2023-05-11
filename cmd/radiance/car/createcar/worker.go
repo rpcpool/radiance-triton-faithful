@@ -60,7 +60,7 @@ func NewIterator(
 	// Seek to epoch start and make sure we have all data
 	const epochLen = 432000
 	officialEpochStart := epoch * epochLen
-	officialEpochStop := officialEpochStart + epochLen
+	officialEpochStop := officialEpochStart + epochLen - 1
 	if requireFullEpoch && !walk.Seek(officialEpochStart) {
 		return nil, fmt.Errorf("slot %d not available in any DB", officialEpochStart)
 	}

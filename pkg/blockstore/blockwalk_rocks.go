@@ -174,7 +174,7 @@ func (m *BlockWalk) pop() error {
 		}
 	}
 	if m.root == nil {
-		klog.Exitf("pop called with no open DB")
+		klog.Infof("pop called with no open DB")
 	}
 	m.root.Close()
 	m.root = nil
