@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -16,8 +17,42 @@ import (
 	"k8s.io/klog/v2"
 )
 
+type intSlice []int
+
+// has
+func (s intSlice) has(v int) bool {
+	for _, vv := range s {
+		if vv == v {
+			return true
+		}
+	}
+	return false
+}
+
+func (s intSlice) empty() bool {
+	return len(s) > 0
+}
+
 func main() {
-	carPath := os.Args[1]
+	var flagPrintFilter string
+	var printID bool
+	flag.StringVar(&flagPrintFilter, "print", "", "print only nodes of these kinds (comma-separated)")
+	flag.BoolVar(&printID, "id", false, "print only the CID of the nodes")
+	flag.Parse()
+	var filter intSlice
+	// parse slice of ints from flagPrintFilter
+	{
+		if flagPrintFilter != "" {
+			for _, v := range flagPrintFilter {
+				if v == ',' {
+					continue
+				}
+				filter = append(filter, int(v))
+			}
+		}
+	}
+
+	carPath := flag.Arg(0)
 	file, err := os.Open(carPath)
 	if err != nil {
 		klog.Exit(err.Error())
@@ -35,6 +70,16 @@ func main() {
 		klog.Infof("Finished in %s", time.Since(startedAt))
 		klog.Infof("Read %d nodes from CAR file", numNodes)
 	}()
+	dotEvery := 100_000
+	klog.Infof("A dot is printed every %d nodes", dotEvery)
+	if filter.empty() {
+		klog.Info("Will print all nodes")
+	} else {
+		klog.Info("Will print only nodes of these kinds: ")
+		for _, v := range filter {
+			klog.Infof("- %s", iplddecoders.Kind(v).String())
+		}
+	}
 	for {
 		block, err := rd.Next()
 		if errors.Is(err, io.EOF) {
@@ -42,11 +87,13 @@ func main() {
 			break
 		}
 		numNodes++
-		if numNodes%100000 == 0 {
+		if numNodes%dotEvery == 0 {
 			fmt.Print(".")
 		}
 		kind := iplddecoders.Kind(block.RawData()[1])
-		fmt.Printf("\nCID=%s Multicodec=%#x Kind=%s\n", block.Cid(), block.Cid().Type(), kind)
+		if printID {
+			fmt.Printf("\nCID=%s Multicodec=%#x Kind=%s\n", block.Cid(), block.Cid().Type(), kind)
+		}
 
 		switch kind {
 		case iplddecoders.KindTransaction:
@@ -55,23 +102,24 @@ func main() {
 				panic(err)
 			}
 			{
-				{
-					var tx solana.Transaction
-					if err := bin.UnmarshalBin(&tx, decoded.Data); err != nil {
-						panic(err)
-					} else if len(tx.Signatures) == 0 {
-						panic("no signatures")
-					}
-					fmt.Println("sig=", tx.Signatures[0].String())
+				var tx solana.Transaction
+				if err := bin.UnmarshalBin(&tx, decoded.Data); err != nil {
+					panic(err)
+				} else if len(tx.Signatures) == 0 {
+					panic("no signatures")
 				}
-				spew.Dump(decoded)
+				if filter.has(int(iplddecoders.KindTransaction)) || filter.empty() {
+					fmt.Println("sig=", tx.Signatures[0].String())
+					spew.Dump(decoded)
+				}
 				{
 					status, err := blockstore.ParseTransactionStatusMeta(decoded.Metadata)
 					if err != nil {
 						panic(err)
 					}
-					_ = status
-					spew.Dump(status)
+					if filter.has(int(iplddecoders.KindTransaction)) || filter.empty() {
+						spew.Dump(status)
+					}
 				}
 			}
 		case iplddecoders.KindEntry:
@@ -79,25 +127,33 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			spew.Dump(decoded)
+			if filter.has(int(iplddecoders.KindEntry)) || filter.empty() {
+				spew.Dump(decoded)
+			}
 		case iplddecoders.KindBlock:
 			decoded, err := iplddecoders.DecodeBlock(block.RawData())
 			if err != nil {
 				panic(err)
 			}
-			spew.Dump(decoded)
+			if filter.has(int(iplddecoders.KindBlock)) || filter.empty() {
+				spew.Dump(decoded)
+			}
 		case iplddecoders.KindSubset:
 			decoded, err := iplddecoders.DecodeSubset(block.RawData())
 			if err != nil {
 				panic(err)
 			}
-			spew.Dump(decoded)
+			if filter.has(int(iplddecoders.KindSubset)) || filter.empty() {
+				spew.Dump(decoded)
+			}
 		case iplddecoders.KindEpoch:
 			decoded, err := iplddecoders.DecodeEpoch(block.RawData())
 			if err != nil {
 				panic(err)
 			}
-			spew.Dump(decoded)
+			if filter.has(int(iplddecoders.KindEpoch)) || filter.empty() {
+				spew.Dump(decoded)
+			}
 		default:
 			panic("unknown kind" + kind.String())
 		}
