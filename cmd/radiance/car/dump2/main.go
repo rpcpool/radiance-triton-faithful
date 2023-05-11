@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -30,7 +31,7 @@ func (s intSlice) has(v int) bool {
 }
 
 func (s intSlice) empty() bool {
-	return len(s) > 0
+	return len(s) == 0
 }
 
 func main() {
@@ -39,7 +40,7 @@ func main() {
 	flag.StringVar(&flagPrintFilter, "print", "", "print only nodes of these kinds (comma-separated)")
 	flag.BoolVar(&printID, "id", false, "print only the CID of the nodes")
 	flag.Parse()
-	var filter intSlice
+	filter := make(intSlice, 0)
 	// parse slice of ints from flagPrintFilter
 	{
 		if flagPrintFilter != "" {
@@ -47,7 +48,11 @@ func main() {
 				if v == ',' {
 					continue
 				}
-				filter = append(filter, int(v))
+				parsed, err := strconv.ParseInt(string(v), 10, 64)
+				if err != nil {
+					panic(err)
+				}
+				filter = append(filter, int(parsed))
 			}
 		}
 	}
