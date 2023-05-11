@@ -1,0 +1,65 @@
+name: Release radiance tool
+
+on:
+  push:
+    branches: [ tx_meta ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ main ]
+
+# on:
+#   push:
+
+jobs:
+  build:
+    runs-on: [ubuntu-20.04]
+
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v3
+
+      - name: setup go env
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.19.7'
+          check-latest: true
+
+      - name: Cache rocksdb build
+        uses: actions/cache@v3
+        with:
+          key: ${{ runner.os }}-build
+          path: |
+            ~/radiance-triton/facebook/
+            ~/radiance-triton/radiance-triton/facebook/
+            ~/work/radiance-triton/radiance-triton/facebook/
+
+      - name: build binaries
+        run: |
+
+            # snappy
+            sudo apt update
+            sudo apt-get install -y libsnappy-dev build-essential cmake zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+
+            # protoc
+            go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+            export PATH="$PATH:$(go env GOPATH)/bin"
+            wget https://github.com/protocolbuffers/protobuf/releases/download/v22.3/protoc-22.3-linux-x86_64.zip
+            unzip protoc-22.3-linux-x86_64.zip
+            sudo mv bin/protoc /usr/bin/protoc
+            sudo chmod +x /usr/bin/protoc
+
+            # deps
+            make gen-proto
+
+            # build
+            make full
+
+            ls -lha radiance
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            radiance
