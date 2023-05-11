@@ -16,6 +16,7 @@ import (
 type BlockWalk struct {
 	handles       []WalkHandle // sorted
 	shredRevision int
+	dbIndex       int
 
 	root        *grocksdb.Iterator
 	onBeforePop func() error
@@ -28,6 +29,7 @@ func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
 	return &BlockWalk{
 		handles:       handles,
 		shredRevision: shredRevision,
+		dbIndex:       -1,
 	}, nil
 }
 
@@ -81,6 +83,10 @@ func (m *BlockWalk) SlotEdges() (low, high uint64) {
 	return
 }
 
+func (m *BlockWalk) DBIndex() int {
+	return m.dbIndex
+}
+
 // Next seeks to the next slot.
 func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 	if len(m.handles) == 0 {
@@ -92,6 +98,8 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 		defer putReadOptions(opts)
 		// Open Next database
 		m.root = h.DB.DB.NewIteratorCF(opts, h.DB.CfRoot)
+		m.dbIndex++
+		klog.Infof("Opening next DB: %s", h.DB.DB.Name())
 		key := MakeSlotKey(h.Start)
 		m.root.Seek(key[:])
 	}

@@ -117,14 +117,42 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	latestSlot := uint64(0)
-	callback := func(slotMeta *blockstore.SlotMeta) error {
+	latestDB := int(0) // 0 is the first DB
+	callback := func(slotMeta *blockstore.SlotMeta, latestDBIndex int) error {
 		if slotMeta.Slot > latestSlot {
+			if latestDBIndex != latestDB {
+				klog.Infof("Switched to DB %d", latestDBIndex)
+				// TODO: warn if we skipped slots
+				if slotMeta.Slot > latestSlot+1 {
+					klog.Warningf(
+						"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from %d",
+						latestSlot+1,
+						slotMeta.Slot-1,
+						latestSlot,
+						slotMeta.Slot,
+					)
+				}
+			}
 			latestSlot = slotMeta.Slot
+			latestDB = latestDBIndex
 		} else if slotMeta.Slot < latestSlot {
-			panic(fmt.Errorf("slot %d is out of order (latest slot: %d)", slotMeta.Slot, latestSlot))
+			if latestDBIndex == latestDB {
+				panic(fmt.Errorf("slot %d is out of order (previous processed slot was: %d)", slotMeta.Slot, latestSlot))
+			} else {
+				// TODO: remove
+				// we switched to another DB; print warning and return
+				klog.Warningf("New DB; slot %d was supposedly already processed (previous processed slot was: %d); skipping", slotMeta.Slot, latestSlot)
+				return nil
+			}
 		} else {
 			// slotMeta.Slot == latestSlot
-			panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
+			if latestDBIndex == latestDB {
+				panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
+			} else {
+				// we switched to another DB; print warning and return
+				klog.Warningf("New DB; slot %d is already processed; skipping", slotMeta.Slot)
+				return nil
+			}
 		}
 		err = multi.OnSlotFromDB(slotMeta)
 		if err != nil {

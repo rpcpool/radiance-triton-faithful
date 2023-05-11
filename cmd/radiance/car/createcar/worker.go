@@ -32,7 +32,7 @@ type Worker struct {
 	numTxns             *atomic.Uint64
 }
 
-type Callback func(slotMeta *blockstore.SlotMeta) error
+type Callback func(slotMeta *blockstore.SlotMeta, latestCarIndex int) error
 
 // uint64RangesHavePartialOverlapIncludingEdges returns true if the two ranges have any overlap.
 func uint64RangesHavePartialOverlapIncludingEdges(r1 [2]uint64, r2 [2]uint64) bool {
@@ -150,18 +150,17 @@ func (w *Worker) step() (next bool, err error) {
 	if meta.Slot > w.stop {
 		return false, nil
 	}
-	if err := w.processSlot(meta); err != nil {
+	latestDBIndex := w.walk.DBIndex()
+	if err := w.processSlot(meta, latestDBIndex); err != nil {
 		return false, err
 	}
 	return true, nil
 }
 
-// processSlot writes a filled Solana slot to the CAR.
-// Creates multiple IPLD blocks internally.
-func (w *Worker) processSlot(meta *blockstore.SlotMeta) error {
+func (w *Worker) processSlot(meta *blockstore.SlotMeta, latestCarIndex int) error {
 	slot := meta.Slot
 	klog.V(3).Infof("Slot %d", slot)
-	return w.callback(meta)
+	return w.callback(meta, latestCarIndex)
 }
 
 func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {

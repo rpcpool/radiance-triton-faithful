@@ -16,6 +16,8 @@ type BlockWalker interface {
 	SetOnBeforePop(func() error)
 	Close()
 
+	DBIndex() int
+
 	// Entries returns the block contents of a slot.
 	//
 	// The outer returned slice contains batches of entries.
