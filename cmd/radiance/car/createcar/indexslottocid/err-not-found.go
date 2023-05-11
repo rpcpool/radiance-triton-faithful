@@ -17,10 +17,6 @@ type ErrNotFound struct {
 // Error implements the error interface and returns a human-readable
 // message for this error.
 func (e ErrNotFound) Error() string {
-	if e.Slot == 0 {
-		return "ipld: could not find node"
-	}
-
 	return "ipld: could not find " + fmt.Sprint(e.Slot)
 }
 

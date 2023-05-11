@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
@@ -175,7 +176,7 @@ func NewMultistage(
 				panic(resValue)
 			case *memSubtreeStore:
 				subtree := resValue
-				if subtree.slot > latestSlot {
+				if subtree.slot > latestSlot || subtree.slot == 0 {
 					latestSlot = subtree.slot
 				} else if subtree.slot < latestSlot {
 					panic(fmt.Errorf("slot %d is out of order (latest slot: %d)", subtree.slot, latestSlot))
@@ -508,7 +509,7 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	allSlots := make([]uint64, 0, len(allRegistered))
 	for _, slot := range allRegistered {
-		if slot.CID == nil || len(slot.CID) == 0 || slot.Slot == 0 || !slot.Status.Is(registry.SlotStatusIncluded) {
+		if slot.CID == nil || len(slot.CID) == 0 || !slot.Status.Is(registry.SlotStatusIncluded) {
 			continue
 		}
 		allSlots = append(allSlots, slot.Slot)
@@ -569,6 +570,7 @@ func (cw *Multistage) constructEpoch(
 	if err != nil {
 		return nil, err
 	}
+	time.Sleep(1 * time.Second)
 	printer.Print(epochNode)
 
 	// - store the Epoch object to storage

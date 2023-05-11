@@ -120,10 +120,15 @@ func run(c *cobra.Command, args []string) {
 		panic(err)
 	}
 
+	hadFirstSlot := false
 	latestSlot := uint64(0)
 	latestDB := int(0) // 0 is the first DB
 	callback := func(slotMeta *blockstore.SlotMeta, latestDBIndex int) error {
-		if slotMeta.Slot > latestSlot {
+		if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
+			if !hadFirstSlot {
+				hadFirstSlot = true
+				klog.Infof("Started processing DB %d from slot %d", latestDBIndex, slotMeta.Slot)
+			}
 			if latestDBIndex != latestDB {
 				klog.Infof("Switched to DB %d; started processing new DB from slot %d (prev: %d)", latestDBIndex, slotMeta.Slot, latestSlot)
 				// TODO: warn if we skipped slots

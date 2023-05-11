@@ -54,7 +54,7 @@ func NewIterator(
 		return nil, fmt.Errorf("callback must be provided")
 	}
 	if epoch == 0 {
-		klog.Warningf("epoch is 0; please be sure this is what you want")
+		klog.Warningf("Epoch is set to 0; please be sure this is what you want")
 	}
 
 	// Seek to epoch start and make sure we have all data
