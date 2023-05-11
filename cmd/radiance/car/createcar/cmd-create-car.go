@@ -40,7 +40,7 @@ var (
 	flagDBs              = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
 	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
 	flagLimitSlots       = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
-	flagSkipHash         = flags.Bool("skip-hash", false, "Skip hashing the CAR file")
+	flagSkipHash         = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
 )
 
 func init() {
@@ -81,12 +81,14 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("Invalid epoch arg: %s", epochStr)
 	}
 	klog.Infof(
-		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v",
+		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v workers=%d skip-hash=%t",
 		finalCARFilepath,
 		epoch,
 		*flagRequireFullEpoch,
 		*flagLimitSlots,
 		*flagDBs,
+		*flagWorkers,
+		*flagSkipHash,
 	)
 
 	// Open blockstores
