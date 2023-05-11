@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	carv1 "github.com/ipld/go-car"
@@ -201,7 +202,7 @@ func CreateCompactIndex(ctx context.Context, carPath string, indexDir string) er
 	}
 	klog.Infof("Found %d items in car file", numItems)
 
-	klog.Infof("Creating builder...")
+	klog.Infof("Creating builder with %d items and target file size %d", numItems, targetFileSize)
 	c2o, err := compactindex.NewBuilder(
 		"",
 		uint(numItems),
@@ -230,6 +231,8 @@ func CreateCompactIndex(ctx context.Context, carPath string, indexDir string) er
 			return err
 		}
 
+		klog.Infof("key: %s, offset: %d", bin.FormatByteSlice(c.Bytes()), totalOffset)
+
 		err = c2o.Insert(c.Bytes(), uint64(totalOffset))
 		if err != nil {
 			return fmt.Errorf("failed to put cid to offset: %w", err)
@@ -238,7 +241,7 @@ func CreateCompactIndex(ctx context.Context, carPath string, indexDir string) er
 		totalOffset += sectionLength
 
 		numItemsIndexed++
-		if numItemsIndexed%1_000 == 0 {
+		if numItemsIndexed%100_000 == 0 {
 			fmt.Print(".")
 		}
 	}

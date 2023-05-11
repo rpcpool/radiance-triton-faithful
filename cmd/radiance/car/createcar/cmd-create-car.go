@@ -41,6 +41,7 @@ var (
 	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
 	flagLimitSlots       = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
 	flagSkipHash         = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
+	flagShredRevision    = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
 )
 
 func init() {
@@ -81,7 +82,7 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("Invalid epoch arg: %s", epochStr)
 	}
 	klog.Infof(
-		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v workers=%d skip-hash=%t",
+		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v workers=%d skip-hash=%t shred-revision=%d",
 		finalCARFilepath,
 		epoch,
 		*flagRequireFullEpoch,
@@ -89,6 +90,7 @@ func run(c *cobra.Command, args []string) {
 		*flagDBs,
 		*flagWorkers,
 		*flagSkipHash,
+		*flagShredRevision,
 	)
 
 	// Open blockstores
@@ -103,7 +105,7 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	// Create new walker object
-	walker, err := blockstore.NewBlockWalk(handles, 2 /*TODO*/)
+	walker, err := blockstore.NewBlockWalk(handles, *flagShredRevision /*TODO*/)
 	if err != nil {
 		klog.Exitf("Failed to create multi-DB iterator: %s", err)
 	}
@@ -148,7 +150,7 @@ func run(c *cobra.Command, args []string) {
 			}
 		} else {
 			// slotMeta.Slot == latestSlot
-			if latestDBIndex == latestDB {
+			if slotMeta.Slot != 0 && latestDBIndex == latestDB {
 				panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
 			} else {
 				// we switched to another DB; print warning and return
