@@ -38,8 +38,10 @@ func (s intSlice) empty() bool {
 func main() {
 	var flagPrintFilter string
 	var printID bool
+	var prettyPrintTransactions bool
 	flag.StringVar(&flagPrintFilter, "print", "", "print only nodes of these kinds (comma-separated)")
 	flag.BoolVar(&printID, "id", false, "print only the CID of the nodes")
+	flag.BoolVar(&prettyPrintTransactions, "pretty", false, "pretty print transactions")
 	flag.Parse()
 	filter := make(intSlice, 0)
 	// parse slice of ints from flagPrintFilter
@@ -123,6 +125,9 @@ func main() {
 				if filter.has(int(iplddecoders.KindTransaction)) || filter.empty() {
 					fmt.Println("sig=", tx.Signatures[0].String())
 					spew.Dump(decoded)
+					if prettyPrintTransactions {
+						fmt.Println(tx.String())
+					}
 				}
 				{
 					status, err := blockstore.ParseTransactionStatusMeta(decoded.Metadata)
