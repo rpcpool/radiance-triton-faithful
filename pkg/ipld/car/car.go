@@ -19,16 +19,17 @@ import (
 	"github.com/multiformats/go-varint"
 )
 
-// IdentityCID is the "zero-length "identity" multihash with "raw" codec".
-//
-// This is the best-practices placeholder value to refer to a non-existent or unknown object.
-var IdentityCID cid.Cid
-
-func init() {
-	id := cid.MustParse("bafyreics5uul5lbtxslcigtoa5fkba7qgwu7cyb7ih7z6fzsh4lgfgraau")
-
-	IdentityCID = id
-}
+var (
+	// DummyCID is the "zero-length "identity" multihash with "raw" codec".
+	//
+	// This is the best-practices placeholder value to refer to a non-existent or unknown object.
+	DummyCID = cid.MustParse("bafkqaaa")
+	// CBOR_SHA256_DUMMY_CID is the CID of the CBOR multicodec with SHA2-256 multihash.
+	//
+	// This is the default CID used when CAR creation starts (before we know the actual root CID
+	// which is the Epoch CID).
+	CBOR_SHA256_DUMMY_CID = cid.MustParse("bafyreics5uul5lbtxslcigtoa5fkba7qgwu7cyb7ih7z6fzsh4lgfgraau")
+)
 
 // Block is a length-cid-data tuple.
 // These make up most of CARv1.

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -534,12 +535,22 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
-	klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
-	err = cw.replaceRoot(epochRootLink.(cidlink.Link).Cid)
+	carFileSize, err := fileSize(cw.carFilepath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to replace roots in file: %w", err)
+		klog.Warningf("Failed to get CAR file size: %s", err)
+	} else {
+		klog.Infof("CAR file size: %s", humanize.Bytes(carFileSize))
 	}
-	klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
+
+	{
+		epochCid := epochRootLink.(cidlink.Link).Cid
+		klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
+		err = cw.replaceRoot(epochCid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to replace roots in file: %w", err)
+		}
+		klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
+	}
 
 	cw.reg.Destroy()
 	return epochRootLink, nil

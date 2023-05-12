@@ -32,7 +32,7 @@ func (c *carHandle) open(finalCARFilepath string) error {
 		return fmt.Errorf("failed to create CAR: %w", err)
 	}
 	cache := bufio.NewWriterSize(file, writeBufSize)
-	writer, err := car.NewWriter(cache)
+	writer, err := car.NewWriter(cache, car.CBOR_SHA256_DUMMY_CID)
 	if err != nil {
 		return fmt.Errorf("failed to start CAR at %s: %w", finalCARFilepath, err)
 	}

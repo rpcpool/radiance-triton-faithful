@@ -27,13 +27,13 @@ type Writer struct {
 }
 
 // NewWriter creates a new CARv1 Writer and writes the header.
-func NewWriter(out io.Writer) (*Writer, error) {
+func NewWriter(out io.Writer, placeholderCID cid.Cid) (*Writer, error) {
 	w := &Writer{out: newCountingWriter(out)}
 
 	// Deliberately using the go-car v0 library here.
 	// go-car v2 doesn't seem to expose the CARv1 header format.
 	hdr := car.CarHeader{
-		Roots:   []cid.Cid{IdentityCID}, // placeholder
+		Roots:   []cid.Cid{placeholderCID}, // placeholder
 		Version: 1,
 	}
 	if err := car.WriteHeader(&hdr, w.out); err != nil {

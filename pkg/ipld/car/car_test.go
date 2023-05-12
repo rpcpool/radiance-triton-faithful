@@ -10,7 +10,7 @@ import (
 )
 
 func TestIdentityCIDStr(t *testing.T) {
-	assert.Equal(t, "bafkqaaa", IdentityCID.String())
+	assert.Equal(t, "bafkqaaa", DummyCID.String())
 }
 
 func TestLeb128Len(t *testing.T) {

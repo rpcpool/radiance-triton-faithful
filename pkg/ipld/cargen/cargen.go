@@ -360,7 +360,7 @@ func (c *carHandle) open(dir string, epoch uint64, slot uint64) error {
 		return fmt.Errorf("failed to create CAR: %w", err)
 	}
 	cache := bufio.NewWriterSize(f, writeBufSize)
-	writer, err := car.NewWriter(cache)
+	writer, err := car.NewWriter(cache, car.DummyCID)
 	if err != nil {
 		return fmt.Errorf("failed to start CAR at %s: %w", p, err)
 	}

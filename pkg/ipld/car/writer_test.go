@@ -43,7 +43,7 @@ func TestNewWriter(t *testing.T) {
 	cbornode.RegisterCborType(x)
 	err = cbornode.DecodeInto(buf.Bytes()[1:], &x)
 	require.NoError(t, err)
-	assert.Equal(t, []cid.Cid{IdentityCID}, x.Roots)
+	assert.Equal(t, []cid.Cid{DummyCID}, x.Roots)
 	assert.Equal(t, uint64(1), x.Version)
 }
 
@@ -74,7 +74,7 @@ func TestWriter(t *testing.T) {
 	ch, err := car.LoadCar(ctx, store, &buf)
 	require.NoError(t, err)
 	assert.Equal(t, &car.CarHeader{
-		Roots:   []cid.Cid{IdentityCID},
+		Roots:   []cid.Cid{DummyCID},
 		Version: 1,
 	}, ch)
 
