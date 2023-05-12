@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"strconv"
 	"time"
@@ -58,11 +59,17 @@ func main() {
 	}
 
 	carPath := flag.Arg(0)
-	file, err := os.Open(carPath)
-	if err != nil {
-		klog.Exit(err.Error())
+	var file fs.File
+	var err error
+	if carPath == "-" {
+		file = os.Stdin
+	} else {
+		file, err = os.Open(carPath)
+		if err != nil {
+			klog.Exit(err.Error())
+		}
+		defer file.Close()
 	}
-	defer file.Close()
 
 	rd, err := car.NewCarReader(file)
 	if err != nil {
