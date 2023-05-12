@@ -77,6 +77,18 @@ func main() {
 	if err != nil {
 		klog.Exitf("Failed to open CAR: %s", err)
 	}
+	// print roots:
+	{
+		roots := rd.Header.Roots
+		klog.Infof("Roots: %d", len(roots))
+		for i, root := range roots {
+			if i == 0 && len(roots) == 1 {
+				klog.Infof("- %s (Epoch CID)", root.String())
+			} else {
+				klog.Infof("- %s", root.String())
+			}
+		}
+	}
 
 	startedAt := time.Now()
 	numNodes := 0
