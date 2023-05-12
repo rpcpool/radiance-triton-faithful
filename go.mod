@@ -17,7 +17,6 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/google/gopacket v1.1.19
 	github.com/google/nftables v0.1.0
-	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
 	github.com/ipfs/boxo v0.8.1
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
