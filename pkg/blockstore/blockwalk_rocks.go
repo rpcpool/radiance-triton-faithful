@@ -8,7 +8,6 @@ import (
 
 	"github.com/linxGnu/grocksdb"
 	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"k8s.io/klog/v2"
 )
 
@@ -155,7 +154,7 @@ func (m *BlockWalk) Entries(meta *SlotMeta) ([][]shred.Entry, error) {
 	return batches, nil
 }
 
-func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error) {
+func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRaw, error) {
 	h := m.handles[0]
 	return h.DB.GetTransactionMetas(keys...)
 }

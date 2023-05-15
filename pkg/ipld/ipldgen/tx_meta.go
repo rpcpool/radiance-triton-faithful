@@ -4,10 +4,9 @@ import (
 	"github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/multiformats/go-multicodec"
+	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldsch"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
-	"google.golang.org/protobuf/proto"
 )
 
 // TxMetaListAssembler produces a Merkle tree of transactionMeta with wide branches.
@@ -21,7 +20,7 @@ func NewTxMetaListAssembler(writer car.OutStream) TxMetaListAssembler {
 }
 
 // Assemble produces a transaction list DAG and returns the root node.
-func (t TxMetaListAssembler) Assemble(metas []*confirmed_block.TransactionStatusMeta) (datamodel.Node, error) {
+func (t TxMetaListAssembler) Assemble(metas []*blockstore.TransactionStatusMetaWithRaw) (datamodel.Node, error) {
 	for _, meta := range metas {
 		if err := t.writeTxMeta(meta); err != nil {
 			return nil, err
@@ -31,11 +30,8 @@ func (t TxMetaListAssembler) Assemble(metas []*confirmed_block.TransactionStatus
 }
 
 // writeTxMeta writes out TransactionMeta to the CAR and appends CID to memory.
-func (t *TxMetaListAssembler) writeTxMeta(meta *confirmed_block.TransactionStatusMeta) error {
-	buf, err := proto.Marshal(meta)
-	if err != nil {
-		panic("failed to marshal meta: " + err.Error())
-	}
+func (t *TxMetaListAssembler) writeTxMeta(meta *blockstore.TransactionStatusMetaWithRaw) error {
+	buf := meta.Raw
 	leaf := car.NewBlockFromRaw(buf, uint64(multicodec.Raw))
 	if err := t.writer.WriteBlock(leaf); err != nil {
 		return err

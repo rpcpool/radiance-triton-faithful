@@ -41,7 +41,12 @@ func putReadOptions(opts *grocksdb.ReadOptions) {
 	readOptionsPool.Put(opts)
 }
 
-func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.TransactionStatusMeta, error) {
+type TransactionStatusMetaWithRaw struct {
+	Parsed *confirmed_block.TransactionStatusMeta
+	Raw    []byte
+}
+
+func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
 	defer putReadOptions(opts)
 	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
@@ -49,7 +54,7 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 		return nil, fmt.Errorf("failed to get tx meta: %w", err)
 	}
 	defer got.Destroy()
-	result := make([]*confirmed_block.TransactionStatusMeta, len(keys))
+	result := make([]*TransactionStatusMetaWithRaw, len(keys))
 	for i, key := range keys {
 		// if got[i] == nil || got[i].Size() == 0 {
 		// 	continue
@@ -60,9 +65,18 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*confirmed_block.Transaction
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse tx meta for %s: %w", signatureFromKey(key), err)
 		}
-		result[i] = txMeta
+		result[i] = &TransactionStatusMetaWithRaw{
+			Parsed: txMeta,
+			Raw:    cloneBytes(metaBytes),
+		}
 	}
 	return result, nil
+}
+
+func cloneBytes(b []byte) []byte {
+	c := make([]byte, len(b))
+	copy(c, b)
+	return c
 }
 
 func (d *DB) GetBlockTime(key []byte) (uint64, error) {

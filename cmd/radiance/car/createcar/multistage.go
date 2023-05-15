@@ -23,13 +23,12 @@ import (
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
+	"go.firedancer.io/radiance/pkg/blockstore"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
@@ -284,7 +283,7 @@ func constructBlock(
 	slotMeta *radianceblockstore.SlotMeta,
 	blockTime uint64,
 	entries [][]shred.Entry,
-	metas []*confirmed_block.TransactionStatusMeta,
+	metas []*blockstore.TransactionStatusMetaWithRaw,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -390,7 +389,7 @@ func onEntry(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
 	entries [][]shred.Entry,
-	metas []*confirmed_block.TransactionStatusMeta,
+	metas []*blockstore.TransactionStatusMetaWithRaw,
 	onEntry func(cidOfAnEntry datamodel.Link),
 ) error {
 	entryNum := 0
@@ -449,7 +448,7 @@ func onTx(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
 	entry shred.Entry,
-	metas []*confirmed_block.TransactionStatusMeta,
+	metas []*blockstore.TransactionStatusMetaWithRaw,
 	onTx func(cidOfATx datamodel.Link),
 ) error {
 	for txIndex, transaction := range entry.Txns {
@@ -460,10 +459,7 @@ func onTx(
 			return fmt.Errorf("failed to marshal transaction %s: %w", firstSig, err)
 		}
 		meta := metas[txIndex]
-		txMeta, err := proto.Marshal(meta)
-		if err != nil {
-			return fmt.Errorf("failed to marshal transaction meta %s: %w", firstSig, err)
-		}
+		txMeta := meta.Raw
 
 		// - construct a Transaction object
 		transactionNode, err := qp.BuildMap(ipldbindcode.Prototypes.Transaction, -1, func(ma datamodel.MapAssembler) {

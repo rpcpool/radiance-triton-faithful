@@ -5,10 +5,10 @@ import (
 	"github.com/ipld/go-ipld-prime/datamodel"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/multiformats/go-multicodec"
+	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/ipld/ipldsch"
 	"go.firedancer.io/radiance/pkg/shred"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 )
 
 // CIDLen is the serialized size in bytes of a Raw/DagCbor CIDv1
@@ -56,7 +56,7 @@ type EntryPos struct {
 }
 
 // WriteEntry appends a ledger entry to the CAR.
-func (b *BlockAssembler) WriteEntry(entry shred.Entry, pos EntryPos, txMetas []*confirmed_block.TransactionStatusMeta) error {
+func (b *BlockAssembler) WriteEntry(entry shred.Entry, pos EntryPos, txMetas []*blockstore.TransactionStatusMetaWithRaw) error {
 	txList, err := NewTxListAssembler(b.writer).Assemble(entry.Txns)
 	if err != nil {
 		return err
