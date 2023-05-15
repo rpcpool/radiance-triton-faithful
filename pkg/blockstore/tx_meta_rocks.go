@@ -5,6 +5,7 @@ package blockstore
 import (
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"sync"
 
 	"github.com/gagliardetto/solana-go"
@@ -65,10 +66,16 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse tx meta for %s: %w", signatureFromKey(key), err)
 		}
-		result[i] = &TransactionStatusMetaWithRaw{
+		obj := &TransactionStatusMetaWithRaw{
 			Parsed: txMeta,
 			Raw:    cloneBytes(metaBytes),
 		}
+		result[i] = obj
+
+		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+			obj.Parsed = nil
+			obj.Raw = nil
+		})
 	}
 	return result, nil
 }
