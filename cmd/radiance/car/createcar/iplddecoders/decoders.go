@@ -32,7 +32,7 @@ func (k Kind) String() string {
 	case KindEpoch:
 		return "Epoch"
 	default:
-		return "Unknown"
+		return fmt.Sprintf("Unknown kind %d", int(k))
 	}
 }
 
