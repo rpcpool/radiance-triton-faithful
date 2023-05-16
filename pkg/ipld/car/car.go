@@ -31,6 +31,13 @@ var (
 	CBOR_SHA256_DUMMY_CID = cid.MustParse("bafyreics5uul5lbtxslcigtoa5fkba7qgwu7cyb7ih7z6fzsh4lgfgraau")
 )
 
+func init() {
+	// Check that the length of the CBOR_SHA256_DUMMY_CID is 36 bytes.
+	if CBOR_SHA256_DUMMY_CID.ByteLen() != 36 {
+		panic(fmt.Errorf("CBOR_SHA256_DUMMY_CID length is not 36 bytes: %d", CBOR_SHA256_DUMMY_CID.ByteLen()))
+	}
+}
+
 // Block is a length-cid-data tuple.
 // These make up most of CARv1.
 //
