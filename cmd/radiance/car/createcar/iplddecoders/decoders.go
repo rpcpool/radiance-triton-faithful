@@ -95,3 +95,25 @@ func DecodeTransaction(transactionRaw []byte) (*ipldbindcode.Transaction, error)
 	}
 	return &transaction, nil
 }
+
+func DecodeAny(anyRaw []byte) (any, error) {
+	if len(anyRaw) == 0 {
+		return nil, fmt.Errorf("empty bytes")
+	}
+	kind := Kind(anyRaw[1])
+
+	switch kind {
+	case KindTransaction:
+		return DecodeTransaction(anyRaw)
+	case KindEntry:
+		return DecodeEntry(anyRaw)
+	case KindBlock:
+		return DecodeBlock(anyRaw)
+	case KindSubset:
+		return DecodeSubset(anyRaw)
+	case KindEpoch:
+		return DecodeEpoch(anyRaw)
+	default:
+		return nil, fmt.Errorf("unknown kind %d", int(kind))
+	}
+}
