@@ -62,7 +62,7 @@ type SimpleIterator struct {
 	cr *carv2.Reader
 }
 
-func NewSimpleIterator(carPath string, indexDir string) (*SimpleIterator, error) {
+func NewSimpleCarIterator(carPath string, indexDir string) (*SimpleIterator, error) {
 	cr, id, err := openCarReaderWithCidIndex(carPath, indexDir)
 	if err != nil {
 		return nil, err

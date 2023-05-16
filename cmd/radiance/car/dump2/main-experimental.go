@@ -202,7 +202,7 @@ func main_wip() {
 		return
 	}
 	if true {
-		simpleIter, err := NewSimpleIterator(carPath, indexDir)
+		simpleIter, err := NewSimpleCarIterator(carPath, indexDir)
 		if err != nil {
 			panic(err)
 		}
