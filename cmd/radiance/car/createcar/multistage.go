@@ -18,6 +18,7 @@ import (
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/ipld/go-ipld-prime/printer"
 	"github.com/ipld/go-ipld-prime/schema"
+	"github.com/klauspost/compress/zstd"
 	"github.com/multiformats/go-multicodec"
 	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
@@ -465,7 +466,7 @@ func onTx(
 		transactionNode, err := qp.BuildMap(ipldbindcode.Prototypes.Transaction, -1, func(ma datamodel.MapAssembler) {
 			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindTransaction)))
 			qp.MapEntry(ma, "data", qp.Bytes(txData))
-			qp.MapEntry(ma, "metadata", qp.Bytes(txMeta))
+			qp.MapEntry(ma, "metadata", qp.Bytes(CompressZstd(txMeta)))
 		})
 		if err != nil {
 			return fmt.Errorf("failed to construct Transaction %s: %w", firstSig, err)
@@ -482,6 +483,14 @@ func onTx(
 		onTx(txLink)
 	}
 	return nil
+}
+
+var encoder, _ = zstd.NewWriter(nil,
+	zstd.WithEncoderLevel(zstd.SpeedFastest),
+)
+
+func CompressZstd(src []byte) []byte {
+	return encoder.EncodeAll(src, make([]byte, 0, len(src)))
 }
 
 // FinalizeDAG constructs the DAG for the given epoch and replaces the root of

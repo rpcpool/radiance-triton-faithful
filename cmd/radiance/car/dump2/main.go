@@ -14,6 +14,7 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/ipld/go-car"
+	"github.com/klauspost/compress/zstd"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"k8s.io/klog/v2"
@@ -142,15 +143,19 @@ func main() {
 				}
 				doPrint := filter.has(int(iplddecoders.KindTransaction)) || filter.empty()
 				if doPrint {
-					fmt.Println("sig=", tx.Signatures[0].String())
+					fmt.Println("sig=" + tx.Signatures[0].String())
 					spew.Dump(decoded)
 					if prettyPrintTransactions {
 						fmt.Println(tx.String())
 					}
 					numNodesPrinted++
 				}
-				{
-					status, err := blockstore.ParseTransactionStatusMeta(decoded.Metadata)
+				if len(decoded.Metadata) > 0 {
+					uncompressedMeta, err := decodeZstd(decoded.Metadata)
+					if err != nil {
+						panic(err)
+					}
+					status, err := blockstore.ParseTransactionStatusMeta(uncompressedMeta)
 					if err != nil {
 						panic(err)
 					}
@@ -200,4 +205,10 @@ func main() {
 		}
 	}
 	klog.Infof("CAR file traversed successfully")
+}
+
+var decoder, _ = zstd.NewReader(nil)
+
+func decodeZstd(data []byte) ([]byte, error) {
+	return decoder.DecodeAll(data, nil)
 }
