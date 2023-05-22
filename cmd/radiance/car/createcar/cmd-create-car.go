@@ -192,6 +192,51 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
 	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
 
+	{
+		// print the size of each DB directory
+		var totalSize uint64
+		hadError := false
+		for _, dbPath := range dbPaths {
+			dbPath = filepath.Clean(dbPath)
+			dbSize, err := getDirSize(dbPath)
+			if err != nil {
+				hadError = true
+				klog.Errorf("Failed to get size of DB %s: %s", dbPath, err)
+				continue
+			}
+			totalSize += dbSize
+			klog.Infof("DB %s size: %s", dbPath, humanize.Bytes(uint64(dbSize)))
+		}
+		if hadError {
+			klog.Warning("Failed to get size of one or more DBs")
+		}
+		klog.Infof("Total DBs size: %s", humanize.Bytes(totalSize))
+	}
+
+	{
+		timeTakenUntilAfterCARFinalization := time.Since(start)
+		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
+		if err != nil {
+			panic(err)
+		}
+		klog.Infof(
+			"This process read %d bytes (%s) from disk (%v/s)",
+			numBytesReadFromDisk,
+			humanize.Bytes(numBytesReadFromDisk),
+			humanize.Bytes(uint64(float64(numBytesReadFromDisk)/timeTakenUntilAfterCARFinalization.Seconds())),
+		)
+		numBytesWrittenToDisk, err := iostats.GetDiskWriteBytes()
+		if err != nil {
+			panic(err)
+		}
+		klog.Infof(
+			"This process wrote %d bytes (%s) to disk (%v/s)",
+			numBytesWrittenToDisk,
+			humanize.Bytes(numBytesWrittenToDisk),
+			humanize.Bytes(uint64(float64(numBytesWrittenToDisk)/timeTakenUntilAfterCARFinalization.Seconds())),
+		)
+	}
+
 	if !*flagSkipHash {
 		hashStartedAt := time.Now()
 		klog.Info("Calculating SHA256 hash of CAR file...")
@@ -207,28 +252,7 @@ func run(c *cobra.Command, args []string) {
 
 	timeTaken := time.Since(start)
 	klog.Infof("Total time taken: %s", timeTaken)
-	{
-		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
-		if err != nil {
-			panic(err)
-		}
-		klog.Infof(
-			"This process read %d bytes (%s) from disk (%v/s)",
-			numBytesReadFromDisk,
-			humanize.Bytes(numBytesReadFromDisk),
-			humanize.Bytes(uint64(float64(numBytesReadFromDisk)/timeTaken.Seconds())),
-		)
-		numBytesWrittenToDisk, err := iostats.GetDiskWriteBytes()
-		if err != nil {
-			panic(err)
-		}
-		klog.Infof(
-			"This process wrote %d bytes (%s) to disk (%v/s)",
-			numBytesWrittenToDisk,
-			humanize.Bytes(numBytesWrittenToDisk),
-			humanize.Bytes(uint64(float64(numBytesWrittenToDisk)/timeTaken.Seconds())),
-		)
-	}
+
 	time.Sleep(1 * time.Second)
 	os.Exit(0)
 }
@@ -280,4 +304,18 @@ func fileSize(path string) (uint64, error) {
 		return 0, err
 	}
 	return uint64(st.Size()), nil
+}
+
+func getDirSize(path string) (uint64, error) {
+	var size uint64
+	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			size += uint64(info.Size())
+		}
+		return nil
+	})
+	return size, err
 }
