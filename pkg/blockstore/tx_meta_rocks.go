@@ -25,6 +25,13 @@ func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	return key
 }
 
+func ParseTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
+	sig = solana.Signature{}
+	copy(sig[:], key[8:72])
+	slot = binary.BigEndian.Uint64(key[72:])
+	return
+}
+
 var readOptionsPool = sync.Pool{
 	New: func() interface{} {
 		opts := grocksdb.NewDefaultReadOptions()
