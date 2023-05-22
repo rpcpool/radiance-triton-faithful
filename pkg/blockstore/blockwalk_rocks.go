@@ -13,22 +13,45 @@ import (
 
 // BlockWalk walks blocks in ascending order over multiple RocksDB databases.
 type BlockWalk struct {
-	handles       []WalkHandle // sorted
-	shredRevision int
-	dbIndex       int
+	handles                         []WalkHandle // sorted
+	shredRevision                   int
+	dbIndex                         int
+	nextShredRevisionActivationSlot *uint64
 
 	root        *grocksdb.Iterator
 	onBeforePop func() error
 }
 
 func NewBlockWalk(handles []WalkHandle, shredRevision int) (*BlockWalk, error) {
-	if err := sortWalkHandles(handles, shredRevision); err != nil {
+	if err := sortWalkHandles(handles, shredRevision, nil); err != nil {
 		return nil, err
 	}
 	return &BlockWalk{
 		handles:       handles,
 		shredRevision: shredRevision,
 		dbIndex:       -1,
+	}, nil
+}
+
+// NewBlockWalkWithNextShredRevisionActivationSlot creates a BlockWalk that
+// that will shredRevision+1 when it reaches nextRevisionActivationSlot.
+func NewBlockWalkWithNextShredRevisionActivationSlot(
+	handles []WalkHandle,
+	shredRevision int,
+	nextRevisionActivationSlot uint64,
+) (*BlockWalk, error) {
+	var activationSlot *uint64
+	if nextRevisionActivationSlot != 0 {
+		activationSlot = &nextRevisionActivationSlot
+	}
+	if err := sortWalkHandles(handles, shredRevision, activationSlot); err != nil {
+		return nil, err
+	}
+	return &BlockWalk{
+		handles:                         handles,
+		shredRevision:                   shredRevision,
+		dbIndex:                         -1,
+		nextShredRevisionActivationSlot: activationSlot,
 	}, nil
 }
 
@@ -142,6 +165,10 @@ func (m *BlockWalk) Next() (meta *SlotMeta, ok bool) {
 // Entries returns the entries at the current cursor.
 // Caller must have made an ok call to BlockWalk.Next before calling this.
 func (m *BlockWalk) Entries(meta *SlotMeta) ([][]shred.Entry, error) {
+	if m.nextShredRevisionActivationSlot != nil && meta.Slot >= *m.nextShredRevisionActivationSlot {
+		m.shredRevision++
+		m.nextShredRevisionActivationSlot = nil
+	}
 	h := m.handles[0]
 	mapping, err := h.DB.GetEntries(meta, m.shredRevision)
 	if err != nil {
@@ -200,10 +227,10 @@ type WalkHandle struct {
 }
 
 // sortWalkHandles detects bounds of each DB and sorts handles.
-func sortWalkHandles(h []WalkHandle, shredRevision int) error {
+func sortWalkHandles(h []WalkHandle, shredRevision int, nextRevisionActivationSlot *uint64) error {
 	for i, db := range h {
 		// Find lowest and highest available slot in DB.
-		start, err := getLowestCompletedSlot(db.DB, shredRevision)
+		start, err := getLowestCompletedSlot(db.DB, shredRevision, nextRevisionActivationSlot)
 		if err != nil {
 			return err
 		}
@@ -223,8 +250,16 @@ func sortWalkHandles(h []WalkHandle, shredRevision int) error {
 	return nil
 }
 
+func cloneUint64Ptr(p *uint64) *uint64 {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
 // getLowestCompleteSlot finds the lowest slot in a RocksDB from which slots are complete onwards.
-func getLowestCompletedSlot(d *DB, shredRevision int) (uint64, error) {
+func getLowestCompletedSlot(d *DB, shredRevision int, nextRevisionActivationSlot *uint64) (uint64, error) {
 	opts := grocksdb.NewDefaultReadOptions()
 	opts.SetVerifyChecksums(false)
 	opts.SetFillCache(false)
@@ -237,11 +272,20 @@ func getLowestCompletedSlot(d *DB, shredRevision int) (uint64, error) {
 	// To work around this, we simply start at the lowest meta and iterate until we find a complete entry.
 
 	const maxTries = 32
+
+	activationSlot := cloneUint64Ptr(nextRevisionActivationSlot)
 	for i := 0; iter.Valid() && i < maxTries; i++ {
 		slot, ok := ParseSlotKey(iter.Key().Data())
 		if !ok {
 			return 0, fmt.Errorf(
 				"getLowestCompletedSlot(%s): choked on invalid slot key: %x", d.DB.Name(), iter.Key().Data())
+		}
+
+		// If we have a shred revision, we need to check if the slot is in the range of the next revision activation.
+		// If so, we need to increment the shred revision.
+		if activationSlot != nil && slot >= *activationSlot {
+			shredRevision++
+			activationSlot = nil
 		}
 
 		// RocksDB row writes are atomic, therefore meta should never be broken.

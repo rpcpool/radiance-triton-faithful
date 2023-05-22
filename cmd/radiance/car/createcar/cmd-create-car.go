@@ -35,13 +35,14 @@ var Cmd = cobra.Command{
 var flags = Cmd.Flags()
 
 var (
-	flagWorkers          = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of goroutines to verify with")
-	flagOut              = flags.StringP("out", "o", "", "Output directory")
-	flagDBs              = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
-	flagRequireFullEpoch = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
-	flagLimitSlots       = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
-	flagSkipHash         = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
-	flagShredRevision    = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
+	flagWorkers                         = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of goroutines to verify with")
+	flagOut                             = flags.StringP("out", "o", "", "Output directory")
+	flagDBs                             = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
+	flagRequireFullEpoch                = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
+	flagLimitSlots                      = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
+	flagSkipHash                        = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
+	flagShredRevision                   = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
+	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot")
 )
 
 func init() {
@@ -82,7 +83,7 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("Invalid epoch arg: %s", epochStr)
 	}
 	klog.Infof(
-		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v workers=%d skip-hash=%t shred-revision=%d",
+		"Flags: out=%s epoch=%d require-full-epoch=%t limit-slots=%v dbs=%v workers=%d skip-hash=%t shred-revision=%d next-shred-revision-activation-slot=%d",
 		finalCARFilepath,
 		epoch,
 		*flagRequireFullEpoch,
@@ -91,6 +92,7 @@ func run(c *cobra.Command, args []string) {
 		*flagWorkers,
 		*flagSkipHash,
 		*flagShredRevision,
+		*flagNextShredRevisionActivationSlot,
 	)
 
 	// Open blockstores
@@ -105,7 +107,11 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	// Create new walker object
-	walker, err := blockstore.NewBlockWalk(handles, *flagShredRevision /*TODO*/)
+	walker, err := blockstore.NewBlockWalkWithNextShredRevisionActivationSlot(
+		handles,
+		*flagShredRevision,
+		*flagNextShredRevisionActivationSlot,
+	)
 	if err != nil {
 		klog.Exitf("Failed to create multi-DB iterator: %s", err)
 	}
