@@ -91,10 +91,25 @@ func (m *mockBlockWalk) Close() {
 	m.staged = nil
 }
 
+func (m *mockBlockWalk) DBIndex() int {
+	return 0
+}
+
+func (m *mockBlockWalk) SetOnBeforePop(func() error) {
+}
+
+func (m *mockBlockWalk) SlotEdges() (low, high uint64) {
+	return 0, 0
+}
+
+func (m *mockBlockWalk) TransactionMetas(keys ...[]byte) ([]*blockstore.TransactionStatusMetaWithRaw, error) {
+	return nil, nil
+}
+
 func TestGen_Empty(t *testing.T) {
 	walk := newMockBlockWalk()
 	dir := t.TempDir()
-	worker, err := NewWorker(dir, 0, walk)
+	worker, err := NewWorker(dir, 0, walk, false, 0)
 	assert.EqualError(t, err, "slot 0 not available in any DB")
 	assert.Nil(t, worker)
 }
@@ -175,7 +190,7 @@ func TestGen_Split(t *testing.T) {
 		})
 
 	dir := t.TempDir()
-	worker, err := NewWorker(dir, 1, walk)
+	worker, err := NewWorker(dir, 1, walk, false, 0)
 	require.NoError(t, err)
 	require.NotNil(t, worker)
 
