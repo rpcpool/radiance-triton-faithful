@@ -8,9 +8,11 @@ import (
 	"runtime"
 	"sync"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/linxGnu/grocksdb"
+	"go.firedancer.io/radiance/cmd/radiance/car/createcar/parse_legacy_transaction_status_meta"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 )
 
@@ -50,8 +52,9 @@ func putReadOptions(opts *grocksdb.ReadOptions) {
 }
 
 type TransactionStatusMetaWithRaw struct {
-	Parsed *confirmed_block.TransactionStatusMeta
-	Raw    []byte
+	ParsedLatest *confirmed_block.TransactionStatusMeta
+	ParsedLegacy *parse_legacy_transaction_status_meta.TransactionStatusMeta
+	Raw          []byte
 }
 
 func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRaw, error) {
@@ -68,19 +71,35 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 		// 	continue
 		// }
 		// TODO: what if got[i] is empty?
+
 		metaBytes := got[i].Data()
-		txMeta, err := ParseTransactionStatusMeta(metaBytes)
+		txMeta, err := ParseAnyTransactionStatusMeta(metaBytes)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse tx meta for %s: %w", signatureFromKey(key), err)
+			debugSlot, _ := ParseTxMetadataKey(key)
+			return nil, fmt.Errorf(
+				"failed to parse tx meta for %s in slot %d: %w\n%s",
+				signatureFromKey(key),
+				debugSlot,
+				err,
+				bin.FormatByteSlice(metaBytes),
+			)
 		}
 		obj := &TransactionStatusMetaWithRaw{
-			Parsed: txMeta,
-			Raw:    cloneBytes(metaBytes),
+			Raw: cloneBytes(metaBytes),
+		}
+		switch txMeta := txMeta.(type) {
+		case *confirmed_block.TransactionStatusMeta:
+			obj.ParsedLatest = txMeta
+		case *parse_legacy_transaction_status_meta.TransactionStatusMeta:
+			obj.ParsedLegacy = txMeta
+		default:
+			panic("unreachable")
 		}
 		result[i] = obj
 
 		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
-			obj.Parsed = nil
+			obj.ParsedLatest = nil
+			obj.ParsedLegacy = nil
 			obj.Raw = nil
 		})
 	}
@@ -121,4 +140,27 @@ func ParseTransactionStatusMeta(buf []byte) (*confirmed_block.TransactionStatusM
 		return nil, err
 	}
 	return &status, nil
+}
+
+// https://github.com/solana-labs/solana/blob/ce598c5c98e7384c104fe7f5121e32c2c5a2d2eb/transaction-status/src/lib.rs
+func ParseLegacyTransactionStatusMeta(buf []byte) (*parse_legacy_transaction_status_meta.TransactionStatusMeta, error) {
+	legacyStatus, err := parse_legacy_transaction_status_meta.BincodeDeserializeTransactionStatusMeta(buf)
+	if err != nil {
+		return nil, err
+	}
+	return &legacyStatus, nil
+}
+
+func ParseAnyTransactionStatusMeta(buf []byte) (any, error) {
+	// try to parse as latest format
+	status, err := ParseTransactionStatusMeta(buf)
+	if err == nil {
+		return status, nil
+	}
+	// try to parse as legacy format
+	legacyStatus, err := ParseLegacyTransactionStatusMeta(buf)
+	if err == nil {
+		return legacyStatus, nil
+	}
+	return nil, fmt.Errorf("failed to parse tx meta: %w", err)
 }
