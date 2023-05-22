@@ -10,6 +10,7 @@ type (
 		Subsets List__Link
 	}
 )
+
 type Subset struct {
 	Kind   int
 	First  int
@@ -26,6 +27,7 @@ type (
 		Meta      SlotMeta
 	}
 )
+
 type SlotMeta struct {
 	Parent_slot int
 	Blocktime   int
@@ -44,4 +46,10 @@ type Transaction struct {
 	Kind     int
 	Data     []uint8
 	Metadata []uint8
+	Slot     int
 }
+
+type (
+	Hash   []uint8
+	Buffer []uint8
+)

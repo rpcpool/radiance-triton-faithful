@@ -40,6 +40,7 @@ type Transaction struct {
   kind     Int
   data     Buffer
   metadata Buffer
+  slot     Int
 } representation tuple
 
 type Hash bytes

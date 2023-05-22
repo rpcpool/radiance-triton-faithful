@@ -37,14 +37,14 @@ type blockWorker struct {
 	slotMeta  *radianceblockstore.SlotMeta
 	CIDSetter func(slot uint64, cid []byte) error
 	walker    *radianceblockstore.BlockWalk
-	done      func()
+	done      func(numTx uint64)
 }
 
 func newBlockWorker(
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
 	walker *radianceblockstore.BlockWalk,
-	done func(),
+	done func(uint64),
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:  slotMeta,
@@ -54,9 +54,18 @@ func newBlockWorker(
 	}
 }
 
+func BlocktimeKey(slot uint64) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key[0:8], slot)
+	return key
+}
+
 // The input type should implement the WorkFunction interface
 func (w blockWorker) Run(ctx context.Context) interface{} {
-	defer w.done()
+	var numTx uint64
+	defer func() {
+		w.done(numTx)
+	}()
 	slot := w.slotMeta.Slot
 	entries, err := w.walker.Entries(w.slotMeta)
 	if err != nil {
@@ -67,14 +76,14 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	if err != nil {
 		return err
 	}
+	numTx = uint64(len(transactionMetaKeys))
 
 	metas, err := w.walker.TransactionMetas(transactionMetaKeys...)
 	if err != nil {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key[0:8], slot)
+	key := BlocktimeKey(slot)
 	blockTime, err := w.walker.BlockTime(key)
 	if err != nil {
 		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
@@ -129,11 +138,12 @@ type Multistage struct {
 
 	reg *registry.Registry
 
-	workerInputChan    chan concurrently.WorkFunction
-	numExecuted        *sync.WaitGroup
-	numResultsReceived sync.WaitGroup
-	numReceivedAtomic  *atomic.Int64
-	walker             *radianceblockstore.BlockWalk
+	workerInputChan     chan concurrently.WorkFunction
+	waitExecuted        *sync.WaitGroup
+	waitResultsReceived sync.WaitGroup
+	numReceivedAtomic   *atomic.Int64
+	numTxAtomic         *atomic.Uint64
+	walker              *radianceblockstore.BlockWalk
 }
 
 // - [x] in stage 1, we create a CAR file for all the slots
@@ -150,16 +160,17 @@ func NewMultistage(
 	cw := &Multistage{
 		carFilepath:       finalCARFilepath,
 		workerInputChan:   make(chan concurrently.WorkFunction, numWorkers),
-		numExecuted:       new(sync.WaitGroup), // used to wait for results
+		waitExecuted:      new(sync.WaitGroup), // used to wait for results
 		walker:            walker,
 		numReceivedAtomic: new(atomic.Int64),
+		numTxAtomic:       new(atomic.Uint64),
 	}
 
 	cw.walker.SetOnBeforePop(func() error {
 		// wait for the current batch processing to finish before closing the DB and opening the next one
-		cw.numExecuted.Wait()
+		cw.waitExecuted.Wait()
 		// reset the group
-		cw.numExecuted = new(sync.WaitGroup)
+		cw.waitExecuted = new(sync.WaitGroup)
 		return nil
 	})
 
@@ -192,7 +203,7 @@ func NewMultistage(
 						panic(fmt.Errorf("failed to write block to CAR: %w", err))
 					}
 				}
-				ms.numResultsReceived.Done()
+				ms.waitResultsReceived.Done()
 				ms.numReceivedAtomic.Add(-1)
 			default:
 				panic(fmt.Errorf("unexpected result type: %T", result.Value))
@@ -267,14 +278,17 @@ func (cw *Multistage) getConcurrency() int {
 func (cw *Multistage) OnSlotFromDB(
 	slotMeta *radianceblockstore.SlotMeta,
 ) error {
-	cw.numExecuted.Add(1)
-	cw.numResultsReceived.Add(1)
+	cw.waitExecuted.Add(1)
+	cw.waitResultsReceived.Add(1)
 	cw.numReceivedAtomic.Add(1)
 	cw.workerInputChan <- newBlockWorker(
 		slotMeta,
 		cw.reg.SetCID,
 		cw.walker,
-		func() { cw.numExecuted.Done() },
+		func(numTx uint64) {
+			cw.numTxAtomic.Add(numTx)
+			cw.waitExecuted.Done()
+		},
 	)
 	return nil
 }
@@ -450,7 +464,7 @@ func onTx(
 	slotMeta *radianceblockstore.SlotMeta,
 	entry shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
-	onTx func(cidOfATx datamodel.Link),
+	callback func(cidOfATx datamodel.Link),
 ) error {
 	for txIndex, transaction := range entry.Txns {
 		firstSig := transaction.Signatures[0]
@@ -467,6 +481,7 @@ func onTx(
 			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindTransaction)))
 			qp.MapEntry(ma, "data", qp.Bytes(txData))
 			qp.MapEntry(ma, "metadata", qp.Bytes(CompressZstd(txMeta)))
+			qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
 		})
 		if err != nil {
 			return fmt.Errorf("failed to construct Transaction %s: %w", firstSig, err)
@@ -480,7 +495,7 @@ func onTx(
 		if err != nil {
 			return fmt.Errorf("failed to store Transaction %s: %w", firstSig, err)
 		}
-		onTx(txLink)
+		callback(txLink)
 	}
 	return nil
 }
@@ -501,12 +516,12 @@ func (cw *Multistage) FinalizeDAG(
 	{
 		// wait for all slots to be registered
 		klog.Infof("Waiting for all slots to be registered...")
-		cw.numExecuted.Wait()
+		cw.waitExecuted.Wait()
 		klog.Infof("All slots registered")
 
 		klog.Infof("Wait to receive all results...")
 		close(cw.workerInputChan)
-		cw.numResultsReceived.Wait()
+		cw.waitResultsReceived.Wait()
 		klog.Infof("All results received")
 	}
 	allRegistered, err := cw.reg.GetAll()
@@ -520,6 +535,7 @@ func (cw *Multistage) FinalizeDAG(
 		}
 		allSlots = append(allSlots, slot.Slot)
 	}
+
 	klog.Infof("Got list of %d slots", len(allSlots))
 
 	numSlotsPerSubset := 432000 / 18 // TODO: make this configurable
@@ -539,6 +555,8 @@ func (cw *Multistage) FinalizeDAG(
 		return nil, fmt.Errorf("failed to close file: %w", err)
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
+
+	klog.Infof("CAR contains %d transactions", cw.numTxAtomic.Load())
 
 	carFileSize, err := fileSize(cw.carFilepath)
 	if err != nil {

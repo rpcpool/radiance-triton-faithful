@@ -88,8 +88,3 @@ func init() {
 		ts.TypeByName("Buffer"),
 	)
 }
-
-type (
-	Hash   []byte
-	Buffer []byte
-)

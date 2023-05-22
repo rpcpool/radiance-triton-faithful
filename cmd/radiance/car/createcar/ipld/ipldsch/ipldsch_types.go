@@ -157,4 +157,5 @@ type _Transaction struct {
 	kind     _Int
 	data     _Buffer
 	metadata _Buffer
+	slot     _Int
 }
