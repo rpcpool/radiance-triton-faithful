@@ -12,7 +12,8 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/linxGnu/grocksdb"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/parse_legacy_transaction_status_meta"
+	metalatest "go.firedancer.io/radiance/cmd/radiance/car/createcar/parse_legacy_transaction_status_meta/v-latest"
+	metaoldest "go.firedancer.io/radiance/cmd/radiance/car/createcar/parse_legacy_transaction_status_meta/v-oldest"
 	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 )
 
@@ -52,9 +53,9 @@ func putReadOptions(opts *grocksdb.ReadOptions) {
 }
 
 type TransactionStatusMetaWithRaw struct {
-	ParsedLatest *confirmed_block.TransactionStatusMeta
-	ParsedLegacy *parse_legacy_transaction_status_meta.TransactionStatusMeta
-	Raw          []byte
+	// ParsedLatest *confirmed_block.TransactionStatusMeta
+	// ParsedLegacy *parse_legacy_transaction_status_meta.TransactionStatusMeta
+	Raw []byte
 }
 
 func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRaw, error) {
@@ -75,10 +76,10 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 		metaBytes := got[i].Data()
 		txMeta, err := ParseAnyTransactionStatusMeta(metaBytes)
 		if err != nil {
-			debugSlot, _ := ParseTxMetadataKey(key)
+			debugSlot, debugSig := ParseTxMetadataKey(key)
 			return nil, fmt.Errorf(
 				"failed to parse tx meta for %s in slot %d: %w\n%s",
-				signatureFromKey(key),
+				debugSig,
 				debugSlot,
 				err,
 				bin.FormatByteSlice(metaBytes),
@@ -89,17 +90,18 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 		}
 		switch txMeta := txMeta.(type) {
 		case *confirmed_block.TransactionStatusMeta:
-			obj.ParsedLatest = txMeta
-		case *parse_legacy_transaction_status_meta.TransactionStatusMeta:
-			obj.ParsedLegacy = txMeta
+		case *metalatest.TransactionStatusMeta:
+		case *metaoldest.TransactionStatusMeta:
+			// spew.Dump(debugSlot, debugSig.String(), txMeta)
 		default:
+			_ = txMeta
 			panic("unreachable")
 		}
 		result[i] = obj
 
 		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
-			obj.ParsedLatest = nil
-			obj.ParsedLegacy = nil
+			// obj.ParsedLatest = nil
+			// obj.ParsedLegacy = nil
 			obj.Raw = nil
 		})
 	}
@@ -142,9 +144,18 @@ func ParseTransactionStatusMeta(buf []byte) (*confirmed_block.TransactionStatusM
 	return &status, nil
 }
 
-// https://github.com/solana-labs/solana/blob/ce598c5c98e7384c104fe7f5121e32c2c5a2d2eb/transaction-status/src/lib.rs
-func ParseLegacyTransactionStatusMeta(buf []byte) (*parse_legacy_transaction_status_meta.TransactionStatusMeta, error) {
-	legacyStatus, err := parse_legacy_transaction_status_meta.BincodeDeserializeTransactionStatusMeta(buf)
+// From https://github.com/solana-labs/solana/blob/ce598c5c98e7384c104fe7f5121e32c2c5a2d2eb/transaction-status/src/lib.rs#L140-L147
+func ParseLegacyTransactionStatusMeta(buf []byte) (*metalatest.TransactionStatusMeta, error) {
+	legacyStatus, err := metalatest.BincodeDeserializeTransactionStatusMeta(buf)
+	if err != nil {
+		return nil, err
+	}
+	return &legacyStatus, nil
+}
+
+// From https://github.com/solana-labs/solana/blob/b7b4aa5d4d34ebf3fd338a64f4f2a5257b047bb4/transaction-status/src/lib.rs#L22-L27
+func ParseLegacyTransactionStatusMetaOldest(buf []byte) (*metaoldest.TransactionStatusMeta, error) {
+	legacyStatus, err := metaoldest.BincodeDeserializeTransactionStatusMeta(buf)
 	if err != nil {
 		return nil, err
 	}
@@ -152,15 +163,20 @@ func ParseLegacyTransactionStatusMeta(buf []byte) (*parse_legacy_transaction_sta
 }
 
 func ParseAnyTransactionStatusMeta(buf []byte) (any, error) {
-	// try to parse as latest format
+	// try to parse as protobuf (latest format)
 	status, err := ParseTransactionStatusMeta(buf)
 	if err == nil {
 		return status, nil
 	}
-	// try to parse as legacy format
-	legacyStatus, err := ParseLegacyTransactionStatusMeta(buf)
+	// try to parse as legacy serde format (last serde format used by solana)
+	status2, err := ParseLegacyTransactionStatusMeta(buf)
 	if err == nil {
-		return legacyStatus, nil
+		return status2, nil
+	}
+	// try to parse as legacy serde format (probably the oldest serde format used by solana)
+	status1, err := ParseLegacyTransactionStatusMetaOldest(buf)
+	if err == nil {
+		return status1, nil
 	}
 	return nil, fmt.Errorf("failed to parse tx meta: %w", err)
 }
