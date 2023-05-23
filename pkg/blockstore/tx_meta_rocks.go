@@ -131,6 +131,36 @@ func (d *DB) GetBlockTime(key []byte) (uint64, error) {
 	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
 }
 
+func (d *DB) GetRewards(slot uint64) (*confirmed_block.Rewards, error) {
+	if d.CfRewards == nil {
+		return nil, nil
+	}
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, slot)
+
+	got, err := d.DB.GetCF(opts, d.CfRewards, key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rewards: %w", err)
+	}
+	defer got.Free()
+	if got == nil || got.Size() == 0 {
+		return nil, nil
+	}
+	return ParseRewards(got.Data())
+}
+
+func ParseRewards(buf []byte) (*confirmed_block.Rewards, error) {
+	var rewards confirmed_block.Rewards
+	err := proto.Unmarshal(buf, &rewards)
+	if err != nil {
+		return nil, err
+	}
+	return &rewards, nil
+}
+
 func signatureFromKey(key []byte) solana.Signature {
 	return solana.SignatureFromBytes(key[8:72])
 }

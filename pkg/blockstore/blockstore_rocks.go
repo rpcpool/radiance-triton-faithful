@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/linxGnu/grocksdb"
+	"k8s.io/klog/v2"
 )
 
 // DB is RocksDB wrapper
@@ -21,6 +22,7 @@ type DB struct {
 	CfCodeShred *grocksdb.ColumnFamilyHandle
 	CfTxStatus  *grocksdb.ColumnFamilyHandle
 	CfBlockTime *grocksdb.ColumnFamilyHandle
+	CfRewards   *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -64,6 +66,7 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	klog.Info("allCfNames: ", allCfNames)
 	db := new(DB)
 
 	// Create list of known column families
@@ -134,9 +137,14 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if db.CfTxStatus == nil {
 		return nil, errors.New("missing column family " + CfTxStatus)
 	}
-	// Keep this optional for now
+	// CfBlockTime is optional
 	// if db.CfBlockTime == nil {
 	// 	return nil, errors.New("missing column family " + CfBlockTime)
+	// }
+
+	// CfRewards is optional
+	// if db.CfRewards == nil {
+	// 	return nil, errors.New("missing column family " + CfRewards)
 	// }
 
 	return db, nil
@@ -158,6 +166,8 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfTxStatus, grocksdb.NewDefaultOptions()
 	case CfBlockTime:
 		return &db.CfBlockTime, grocksdb.NewDefaultOptions()
+	case CfRewards:
+		return &db.CfRewards, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}
