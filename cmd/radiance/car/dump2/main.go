@@ -151,7 +151,7 @@ func main() {
 					numNodesPrinted++
 				}
 				if len(decoded.Metadata) > 0 {
-					uncompressedMeta, err := decodeZstd(decoded.Metadata)
+					uncompressedMeta, err := decompressZstd(decoded.Metadata)
 					if err != nil {
 						panic(err)
 					}
@@ -208,9 +208,13 @@ func main() {
 			if filter.has(int(iplddecoders.KindRewards)) || filter.empty() {
 				spew.Dump(decoded)
 				numNodesPrinted++
-				{
+				if len(decoded.Data) > 0 {
+					uncompressedRewards, err := decompressZstd(decoded.Data)
+					if err != nil {
+						panic(err)
+					}
 					// try decoding as protobuf
-					parsed, err := blockstore.ParseRewards(decoded.Data)
+					parsed, err := blockstore.ParseRewards(uncompressedRewards)
 					if err != nil {
 						fmt.Println("Rewards are not protobuf: " + err.Error())
 					} else {
@@ -227,6 +231,6 @@ func main() {
 
 var decoder, _ = zstd.NewReader(nil)
 
-func decodeZstd(data []byte) ([]byte, error) {
+func decompressZstd(data []byte) ([]byte, error) {
 	return decoder.DecodeAll(data, nil)
 }

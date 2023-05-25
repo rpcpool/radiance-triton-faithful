@@ -334,7 +334,7 @@ func constructBlock(
 	rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
 		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
 		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
-		qp.MapEntry(ma, "data", qp.Bytes(rewards))
+		qp.MapEntry(ma, "data", qp.Bytes(CompressZstd(rewards)))
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to build reward node: %w", err)

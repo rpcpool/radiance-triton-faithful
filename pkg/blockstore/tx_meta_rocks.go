@@ -133,7 +133,7 @@ func (d *DB) GetBlockTime(key []byte) (uint64, error) {
 
 func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 	if d.CfRewards == nil {
-		return nil, nil
+		return make([]byte, 0), nil
 	}
 	opts := getReadOptions()
 	defer putReadOptions(opts)
@@ -147,7 +147,7 @@ func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 	}
 	defer got.Free()
 	if got == nil || got.Size() == 0 {
-		return nil, nil
+		return make([]byte, 0), nil
 	}
 	return cloneBytes(got.Data()), nil
 }
