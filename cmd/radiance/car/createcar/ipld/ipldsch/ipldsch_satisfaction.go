@@ -23,6 +23,9 @@ func (n _Block) FieldEntries() List__Link {
 func (n _Block) FieldMeta() SlotMeta {
 	return &n.meta
 }
+func (n _Block) FieldRewards() Link {
+	return &n.rewards
+}
 
 type _Block__Maybe struct {
 	m schema.Maybe
@@ -64,6 +67,7 @@ var (
 	fieldName__Block_Shredding = _String{"shredding"}
 	fieldName__Block_Entries   = _String{"entries"}
 	fieldName__Block_Meta      = _String{"meta"}
+	fieldName__Block_Rewards   = _String{"rewards"}
 )
 var _ datamodel.Node = (Block)(&_Block{})
 var _ schema.TypedNode = (Block)(&_Block{})
@@ -83,6 +87,8 @@ func (n Block) LookupByString(key string) (datamodel.Node, error) {
 		return &n.entries, nil
 	case "meta":
 		return &n.meta, nil
+	case "rewards":
+		return &n.rewards, nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
 	}
@@ -110,7 +116,7 @@ type _Block__MapItr struct {
 }
 
 func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) {
-	if itr.idx >= 5 {
+	if itr.idx >= 6 {
 		return nil, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -129,6 +135,9 @@ func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	case 4:
 		k = &fieldName__Block_Meta
 		v = &itr.n.meta
+	case 5:
+		k = &fieldName__Block_Rewards
+		v = &itr.n.rewards
 	default:
 		panic("unreachable")
 	}
@@ -136,14 +145,14 @@ func (itr *_Block__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) 
 	return
 }
 func (itr *_Block__MapItr) Done() bool {
-	return itr.idx >= 5
+	return itr.idx >= 6
 }
 
 func (Block) ListIterator() datamodel.ListIterator {
 	return nil
 }
 func (Block) Length() int64 {
-	return 5
+	return 6
 }
 func (Block) IsAbsent() bool {
 	return false
@@ -210,6 +219,7 @@ type _Block__Assembler struct {
 	ca_shredding _List__Shredding__Assembler
 	ca_entries   _List__Link__Assembler
 	ca_meta      _SlotMeta__Assembler
+	ca_rewards   _Link__Assembler
 }
 
 func (na *_Block__Assembler) reset() {
@@ -220,6 +230,7 @@ func (na *_Block__Assembler) reset() {
 	na.ca_shredding.reset()
 	na.ca_entries.reset()
 	na.ca_meta.reset()
+	na.ca_rewards.reset()
 }
 
 var (
@@ -228,7 +239,8 @@ var (
 	fieldBit__Block_Shredding   = 1 << 2
 	fieldBit__Block_Entries     = 1 << 3
 	fieldBit__Block_Meta        = 1 << 4
-	fieldBits__Block_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3 + 1<<4
+	fieldBit__Block_Rewards     = 1 << 5
+	fieldBits__Block_sufficient = 0 + 1<<0 + 1<<1 + 1<<2 + 1<<3 + 1<<4 + 1<<5
 )
 
 func (na *_Block__Assembler) BeginMap(int64) (datamodel.MapAssembler, error) {
@@ -372,6 +384,16 @@ func (ma *_Block__Assembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 5:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_rewards.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -442,6 +464,16 @@ func (ma *_Block__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, e
 		ma.ca_meta.w = &ma.w.meta
 		ma.ca_meta.m = &ma.cm
 		return &ma.ca_meta, nil
+	case "rewards":
+		if ma.s&fieldBit__Block_Rewards != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Rewards}
+		}
+		ma.s += fieldBit__Block_Rewards
+		ma.state = maState_midValue
+		ma.f = 5
+		ma.ca_rewards.w = &ma.w.rewards
+		ma.ca_rewards.m = &ma.cm
+		return &ma.ca_rewards, nil
 	}
 	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.Block", Key: &_String{k}}
 }
@@ -498,6 +530,10 @@ func (ma *_Block__Assembler) AssembleValue() datamodel.NodeAssembler {
 		ma.ca_meta.w = &ma.w.meta
 		ma.ca_meta.m = &ma.cm
 		return &ma.ca_meta
+	case 5:
+		ma.ca_rewards.w = &ma.w.rewards
+		ma.ca_rewards.m = &ma.cm
+		return &ma.ca_rewards
 	default:
 		panic("unreachable")
 	}
@@ -533,6 +569,9 @@ func (ma *_Block__Assembler) Finish() error {
 		}
 		if ma.s&fieldBit__Block_Meta == 0 {
 			err.Missing = append(err.Missing, "meta")
+		}
+		if ma.s&fieldBit__Block_Rewards == 0 {
+			err.Missing = append(err.Missing, "rewards")
 		}
 		return err
 	}
@@ -612,6 +651,14 @@ func (ka *_Block__KeyAssembler) AssignString(k string) error {
 		ka.state = maState_expectValue
 		ka.f = 4
 		return nil
+	case "rewards":
+		if ka.s&fieldBit__Block_Rewards != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Block_Rewards}
+		}
+		ka.s += fieldBit__Block_Rewards
+		ka.state = maState_expectValue
+		ka.f = 5
+		return nil
 	default:
 		return schema.ErrInvalidKey{TypeName: "ipldsch.Block", Key: &_String{k}}
 	}
@@ -668,6 +715,8 @@ func (n *_Block__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
 		return n.entries.Representation(), nil
 	case 4:
 		return n.meta.Representation(), nil
+	case 5:
+		return n.rewards.Representation(), nil
 	default:
 		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
 	}
@@ -692,7 +741,7 @@ type _Block__ReprListItr struct {
 }
 
 func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
-	if itr.idx >= 5 {
+	if itr.idx >= 6 {
 		return -1, nil, datamodel.ErrIteratorOverread{}
 	}
 	switch itr.idx {
@@ -711,6 +760,9 @@ func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	case 4:
 		idx = int64(itr.idx)
 		v = itr.n.meta.Representation()
+	case 5:
+		idx = int64(itr.idx)
+		v = itr.n.rewards.Representation()
 	default:
 		panic("unreachable")
 	}
@@ -718,11 +770,11 @@ func (itr *_Block__ReprListItr) Next() (idx int64, v datamodel.Node, err error) 
 	return
 }
 func (itr *_Block__ReprListItr) Done() bool {
-	return itr.idx >= 5
+	return itr.idx >= 6
 }
 
 func (rn *_Block__Repr) Length() int64 {
-	l := 5
+	l := 6
 	return int64(l)
 }
 func (_Block__Repr) IsAbsent() bool {
@@ -789,6 +841,7 @@ type _Block__ReprAssembler struct {
 	ca_shredding _List__Shredding__ReprAssembler
 	ca_entries   _List__Link__ReprAssembler
 	ca_meta      _SlotMeta__ReprAssembler
+	ca_rewards   _Link__ReprAssembler
 }
 
 func (na *_Block__ReprAssembler) reset() {
@@ -799,6 +852,7 @@ func (na *_Block__ReprAssembler) reset() {
 	na.ca_shredding.reset()
 	na.ca_entries.reset()
 	na.ca_meta.reset()
+	na.ca_rewards.reset()
 }
 func (_Block__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
 	return mixins.ListAssembler{TypeName: "ipldsch.Block.Repr"}.BeginMap(0)
@@ -938,6 +992,16 @@ func (la *_Block__ReprAssembler) valueFinishTidy() bool {
 		default:
 			return false
 		}
+	case 5:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
 	default:
 		panic("unreachable")
 	}
@@ -953,8 +1017,8 @@ func (la *_Block__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 	case laState_finished:
 		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
 	}
-	if la.f >= 5 {
-		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(5)}}
+	if la.f >= 6 {
+		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(6)}}
 	}
 	la.state = laState_midValue
 	switch la.f {
@@ -978,6 +1042,10 @@ func (la *_Block__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
 		la.ca_meta.w = &la.w.meta
 		la.ca_meta.m = &la.cm
 		return &la.ca_meta
+	case 5:
+		la.ca_rewards.w = &la.w.rewards
+		la.ca_rewards.m = &la.cm
+		return &la.ca_rewards
 	default:
 		panic("unreachable")
 	}
@@ -5398,6 +5466,863 @@ func (la *_List__Shredding__ReprAssembler) Finish() error {
 }
 func (la *_List__Shredding__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
 	return _Shredding__ReprPrototype{}
+}
+
+func (n _Rewards) FieldKind() Int {
+	return &n.kind
+}
+func (n _Rewards) FieldSlot() Int {
+	return &n.slot
+}
+func (n _Rewards) FieldData() Buffer {
+	return &n.data
+}
+
+type _Rewards__Maybe struct {
+	m schema.Maybe
+	v Rewards
+}
+type MaybeRewards = *_Rewards__Maybe
+
+func (m MaybeRewards) IsNull() bool {
+	return m.m == schema.Maybe_Null
+}
+func (m MaybeRewards) IsAbsent() bool {
+	return m.m == schema.Maybe_Absent
+}
+func (m MaybeRewards) Exists() bool {
+	return m.m == schema.Maybe_Value
+}
+func (m MaybeRewards) AsNode() datamodel.Node {
+	switch m.m {
+	case schema.Maybe_Absent:
+		return datamodel.Absent
+	case schema.Maybe_Null:
+		return datamodel.Null
+	case schema.Maybe_Value:
+		return m.v
+	default:
+		panic("unreachable")
+	}
+}
+func (m MaybeRewards) Must() Rewards {
+	if !m.Exists() {
+		panic("unbox of a maybe rejected")
+	}
+	return m.v
+}
+
+var (
+	fieldName__Rewards_Kind = _String{"kind"}
+	fieldName__Rewards_Slot = _String{"slot"}
+	fieldName__Rewards_Data = _String{"data"}
+)
+var _ datamodel.Node = (Rewards)(&_Rewards{})
+var _ schema.TypedNode = (Rewards)(&_Rewards{})
+
+func (Rewards) Kind() datamodel.Kind {
+	return datamodel.Kind_Map
+}
+func (n Rewards) LookupByString(key string) (datamodel.Node, error) {
+	switch key {
+	case "kind":
+		return &n.kind, nil
+	case "slot":
+		return &n.slot, nil
+	case "data":
+		return &n.data, nil
+	default:
+		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfString(key)}
+	}
+}
+func (n Rewards) LookupByNode(key datamodel.Node) (datamodel.Node, error) {
+	ks, err := key.AsString()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupByString(ks)
+}
+func (Rewards) LookupByIndex(idx int64) (datamodel.Node, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.LookupByIndex(0)
+}
+func (n Rewards) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	return n.LookupByString(seg.String())
+}
+func (n Rewards) MapIterator() datamodel.MapIterator {
+	return &_Rewards__MapItr{n, 0}
+}
+
+type _Rewards__MapItr struct {
+	n   Rewards
+	idx int
+}
+
+func (itr *_Rewards__MapItr) Next() (k datamodel.Node, v datamodel.Node, _ error) {
+	if itr.idx >= 3 {
+		return nil, nil, datamodel.ErrIteratorOverread{}
+	}
+	switch itr.idx {
+	case 0:
+		k = &fieldName__Rewards_Kind
+		v = &itr.n.kind
+	case 1:
+		k = &fieldName__Rewards_Slot
+		v = &itr.n.slot
+	case 2:
+		k = &fieldName__Rewards_Data
+		v = &itr.n.data
+	default:
+		panic("unreachable")
+	}
+	itr.idx++
+	return
+}
+func (itr *_Rewards__MapItr) Done() bool {
+	return itr.idx >= 3
+}
+
+func (Rewards) ListIterator() datamodel.ListIterator {
+	return nil
+}
+func (Rewards) Length() int64 {
+	return 3
+}
+func (Rewards) IsAbsent() bool {
+	return false
+}
+func (Rewards) IsNull() bool {
+	return false
+}
+func (Rewards) AsBool() (bool, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsBool()
+}
+func (Rewards) AsInt() (int64, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsInt()
+}
+func (Rewards) AsFloat() (float64, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsFloat()
+}
+func (Rewards) AsString() (string, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsString()
+}
+func (Rewards) AsBytes() ([]byte, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsBytes()
+}
+func (Rewards) AsLink() (datamodel.Link, error) {
+	return mixins.Map{TypeName: "ipldsch.Rewards"}.AsLink()
+}
+func (Rewards) Prototype() datamodel.NodePrototype {
+	return _Rewards__Prototype{}
+}
+
+type _Rewards__Prototype struct{}
+
+func (_Rewards__Prototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _Rewards__Builder
+	nb.Reset()
+	return &nb
+}
+
+type _Rewards__Builder struct {
+	_Rewards__Assembler
+}
+
+func (nb *_Rewards__Builder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_Rewards__Builder) Reset() {
+	var w _Rewards
+	var m schema.Maybe
+	*nb = _Rewards__Builder{_Rewards__Assembler{w: &w, m: &m}}
+}
+
+type _Rewards__Assembler struct {
+	w     *_Rewards
+	m     *schema.Maybe
+	state maState
+	s     int
+	f     int
+
+	cm      schema.Maybe
+	ca_kind _Int__Assembler
+	ca_slot _Int__Assembler
+	ca_data _Buffer__Assembler
+}
+
+func (na *_Rewards__Assembler) reset() {
+	na.state = maState_initial
+	na.s = 0
+	na.ca_kind.reset()
+	na.ca_slot.reset()
+	na.ca_data.reset()
+}
+
+var (
+	fieldBit__Rewards_Kind        = 1 << 0
+	fieldBit__Rewards_Slot        = 1 << 1
+	fieldBit__Rewards_Data        = 1 << 2
+	fieldBits__Rewards_sufficient = 0 + 1<<0 + 1<<1 + 1<<2
+)
+
+func (na *_Rewards__Assembler) BeginMap(int64) (datamodel.MapAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if na.w == nil {
+		na.w = &_Rewards{}
+	}
+	return na, nil
+}
+func (_Rewards__Assembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.BeginList(0)
+}
+func (na *_Rewards__Assembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_Rewards__Assembler) AssignBool(bool) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignBool(false)
+}
+func (_Rewards__Assembler) AssignInt(int64) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignInt(0)
+}
+func (_Rewards__Assembler) AssignFloat(float64) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignFloat(0)
+}
+func (_Rewards__Assembler) AssignString(string) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignString("")
+}
+func (_Rewards__Assembler) AssignBytes([]byte) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignBytes(nil)
+}
+func (_Rewards__Assembler) AssignLink(datamodel.Link) error {
+	return mixins.MapAssembler{TypeName: "ipldsch.Rewards"}.AssignLink(nil)
+}
+func (na *_Rewards__Assembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_Rewards); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		if na.w == nil {
+			na.w = v2
+			*na.m = schema.Maybe_Value
+			return nil
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_Map {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.Rewards", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustMap, ActualKind: v.Kind()}
+	}
+	itr := v.MapIterator()
+	for !itr.Done() {
+		k, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleKey().AssignNode(k); err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_Rewards__Assembler) Prototype() datamodel.NodePrototype {
+	return _Rewards__Prototype{}
+}
+func (ma *_Rewards__Assembler) valueFinishTidy() bool {
+	switch ma.f {
+	case 0:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_kind.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
+	case 1:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_slot.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
+	case 2:
+		switch ma.cm {
+		case schema.Maybe_Value:
+			ma.ca_data.w = nil
+			ma.cm = schema.Maybe_Absent
+			ma.state = maState_initial
+			return true
+		default:
+			return false
+		}
+	default:
+		panic("unreachable")
+	}
+}
+func (ma *_Rewards__Assembler) AssembleEntry(k string) (datamodel.NodeAssembler, error) {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: AssembleEntry cannot be called when in the middle of assembling another key")
+	case maState_expectValue:
+		panic("invalid state: AssembleEntry cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: AssembleEntry cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: AssembleEntry cannot be called on an assembler that's already finished")
+	}
+	switch k {
+	case "kind":
+		if ma.s&fieldBit__Rewards_Kind != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Kind}
+		}
+		ma.s += fieldBit__Rewards_Kind
+		ma.state = maState_midValue
+		ma.f = 0
+		ma.ca_kind.w = &ma.w.kind
+		ma.ca_kind.m = &ma.cm
+		return &ma.ca_kind, nil
+	case "slot":
+		if ma.s&fieldBit__Rewards_Slot != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Slot}
+		}
+		ma.s += fieldBit__Rewards_Slot
+		ma.state = maState_midValue
+		ma.f = 1
+		ma.ca_slot.w = &ma.w.slot
+		ma.ca_slot.m = &ma.cm
+		return &ma.ca_slot, nil
+	case "data":
+		if ma.s&fieldBit__Rewards_Data != 0 {
+			return nil, datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Data}
+		}
+		ma.s += fieldBit__Rewards_Data
+		ma.state = maState_midValue
+		ma.f = 2
+		ma.ca_data.w = &ma.w.data
+		ma.ca_data.m = &ma.cm
+		return &ma.ca_data, nil
+	}
+	return nil, schema.ErrInvalidKey{TypeName: "ipldsch.Rewards", Key: &_String{k}}
+}
+func (ma *_Rewards__Assembler) AssembleKey() datamodel.NodeAssembler {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: AssembleKey cannot be called when in the middle of assembling another key")
+	case maState_expectValue:
+		panic("invalid state: AssembleKey cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: AssembleKey cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: AssembleKey cannot be called on an assembler that's already finished")
+	}
+	ma.state = maState_midKey
+	return (*_Rewards__KeyAssembler)(ma)
+}
+func (ma *_Rewards__Assembler) AssembleValue() datamodel.NodeAssembler {
+	switch ma.state {
+	case maState_initial:
+		panic("invalid state: AssembleValue cannot be called when no key is primed")
+	case maState_midKey:
+		panic("invalid state: AssembleValue cannot be called when in the middle of assembling a key")
+	case maState_expectValue:
+		// carry on
+	case maState_midValue:
+		panic("invalid state: AssembleValue cannot be called when in the middle of assembling another value")
+	case maState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	ma.state = maState_midValue
+	switch ma.f {
+	case 0:
+		ma.ca_kind.w = &ma.w.kind
+		ma.ca_kind.m = &ma.cm
+		return &ma.ca_kind
+	case 1:
+		ma.ca_slot.w = &ma.w.slot
+		ma.ca_slot.m = &ma.cm
+		return &ma.ca_slot
+	case 2:
+		ma.ca_data.w = &ma.w.data
+		ma.ca_data.m = &ma.cm
+		return &ma.ca_data
+	default:
+		panic("unreachable")
+	}
+}
+func (ma *_Rewards__Assembler) Finish() error {
+	switch ma.state {
+	case maState_initial:
+		// carry on
+	case maState_midKey:
+		panic("invalid state: Finish cannot be called when in the middle of assembling a key")
+	case maState_expectValue:
+		panic("invalid state: Finish cannot be called when expecting start of value assembly")
+	case maState_midValue:
+		if !ma.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case maState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	if ma.s&fieldBits__Rewards_sufficient != fieldBits__Rewards_sufficient {
+		err := schema.ErrMissingRequiredField{Missing: make([]string, 0)}
+		if ma.s&fieldBit__Rewards_Kind == 0 {
+			err.Missing = append(err.Missing, "kind")
+		}
+		if ma.s&fieldBit__Rewards_Slot == 0 {
+			err.Missing = append(err.Missing, "slot")
+		}
+		if ma.s&fieldBit__Rewards_Data == 0 {
+			err.Missing = append(err.Missing, "data")
+		}
+		return err
+	}
+	ma.state = maState_finished
+	*ma.m = schema.Maybe_Value
+	return nil
+}
+func (ma *_Rewards__Assembler) KeyPrototype() datamodel.NodePrototype {
+	return _String__Prototype{}
+}
+func (ma *_Rewards__Assembler) ValuePrototype(k string) datamodel.NodePrototype {
+	panic("todo structbuilder mapassembler valueprototype")
+}
+
+type _Rewards__KeyAssembler _Rewards__Assembler
+
+func (_Rewards__KeyAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.BeginMap(0)
+}
+func (_Rewards__KeyAssembler) BeginList(sizeHint int64) (datamodel.ListAssembler, error) {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.BeginList(0)
+}
+func (na *_Rewards__KeyAssembler) AssignNull() error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignNull()
+}
+func (_Rewards__KeyAssembler) AssignBool(bool) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignBool(false)
+}
+func (_Rewards__KeyAssembler) AssignInt(int64) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignInt(0)
+}
+func (_Rewards__KeyAssembler) AssignFloat(float64) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignFloat(0)
+}
+func (ka *_Rewards__KeyAssembler) AssignString(k string) error {
+	if ka.state != maState_midKey {
+		panic("misuse: KeyAssembler held beyond its valid lifetime")
+	}
+	switch k {
+	case "kind":
+		if ka.s&fieldBit__Rewards_Kind != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Kind}
+		}
+		ka.s += fieldBit__Rewards_Kind
+		ka.state = maState_expectValue
+		ka.f = 0
+		return nil
+	case "slot":
+		if ka.s&fieldBit__Rewards_Slot != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Slot}
+		}
+		ka.s += fieldBit__Rewards_Slot
+		ka.state = maState_expectValue
+		ka.f = 1
+		return nil
+	case "data":
+		if ka.s&fieldBit__Rewards_Data != 0 {
+			return datamodel.ErrRepeatedMapKey{Key: &fieldName__Rewards_Data}
+		}
+		ka.s += fieldBit__Rewards_Data
+		ka.state = maState_expectValue
+		ka.f = 2
+		return nil
+	default:
+		return schema.ErrInvalidKey{TypeName: "ipldsch.Rewards", Key: &_String{k}}
+	}
+}
+func (_Rewards__KeyAssembler) AssignBytes([]byte) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignBytes(nil)
+}
+func (_Rewards__KeyAssembler) AssignLink(datamodel.Link) error {
+	return mixins.StringAssembler{TypeName: "ipldsch.Rewards.KeyAssembler"}.AssignLink(nil)
+}
+func (ka *_Rewards__KeyAssembler) AssignNode(v datamodel.Node) error {
+	if v2, err := v.AsString(); err != nil {
+		return err
+	} else {
+		return ka.AssignString(v2)
+	}
+}
+func (_Rewards__KeyAssembler) Prototype() datamodel.NodePrototype {
+	return _String__Prototype{}
+}
+func (Rewards) Type() schema.Type {
+	return nil /*TODO:typelit*/
+}
+func (n Rewards) Representation() datamodel.Node {
+	return (*_Rewards__Repr)(n)
+}
+
+type _Rewards__Repr _Rewards
+
+var _ datamodel.Node = &_Rewards__Repr{}
+
+func (_Rewards__Repr) Kind() datamodel.Kind {
+	return datamodel.Kind_List
+}
+func (_Rewards__Repr) LookupByString(string) (datamodel.Node, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.LookupByString("")
+}
+func (n *_Rewards__Repr) LookupByNode(key datamodel.Node) (datamodel.Node, error) {
+	ki, err := key.AsInt()
+	if err != nil {
+		return nil, err
+	}
+	return n.LookupByIndex(ki)
+}
+func (n *_Rewards__Repr) LookupByIndex(idx int64) (datamodel.Node, error) {
+	switch idx {
+	case 0:
+		return n.kind.Representation(), nil
+	case 1:
+		return n.slot.Representation(), nil
+	case 2:
+		return n.data.Representation(), nil
+	default:
+		return nil, schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(idx)}
+	}
+}
+func (n _Rewards__Repr) LookupBySegment(seg datamodel.PathSegment) (datamodel.Node, error) {
+	i, err := seg.Index()
+	if err != nil {
+		return nil, datamodel.ErrInvalidSegmentForList{TypeName: "ipldsch.Rewards.Repr", TroubleSegment: seg, Reason: err}
+	}
+	return n.LookupByIndex(i)
+}
+func (_Rewards__Repr) MapIterator() datamodel.MapIterator {
+	return nil
+}
+func (n *_Rewards__Repr) ListIterator() datamodel.ListIterator {
+	return &_Rewards__ReprListItr{n, 0}
+}
+
+type _Rewards__ReprListItr struct {
+	n   *_Rewards__Repr
+	idx int
+}
+
+func (itr *_Rewards__ReprListItr) Next() (idx int64, v datamodel.Node, err error) {
+	if itr.idx >= 3 {
+		return -1, nil, datamodel.ErrIteratorOverread{}
+	}
+	switch itr.idx {
+	case 0:
+		idx = int64(itr.idx)
+		v = itr.n.kind.Representation()
+	case 1:
+		idx = int64(itr.idx)
+		v = itr.n.slot.Representation()
+	case 2:
+		idx = int64(itr.idx)
+		v = itr.n.data.Representation()
+	default:
+		panic("unreachable")
+	}
+	itr.idx++
+	return
+}
+func (itr *_Rewards__ReprListItr) Done() bool {
+	return itr.idx >= 3
+}
+
+func (rn *_Rewards__Repr) Length() int64 {
+	l := 3
+	return int64(l)
+}
+func (_Rewards__Repr) IsAbsent() bool {
+	return false
+}
+func (_Rewards__Repr) IsNull() bool {
+	return false
+}
+func (_Rewards__Repr) AsBool() (bool, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsBool()
+}
+func (_Rewards__Repr) AsInt() (int64, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsInt()
+}
+func (_Rewards__Repr) AsFloat() (float64, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsFloat()
+}
+func (_Rewards__Repr) AsString() (string, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsString()
+}
+func (_Rewards__Repr) AsBytes() ([]byte, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsBytes()
+}
+func (_Rewards__Repr) AsLink() (datamodel.Link, error) {
+	return mixins.List{TypeName: "ipldsch.Rewards.Repr"}.AsLink()
+}
+func (_Rewards__Repr) Prototype() datamodel.NodePrototype {
+	return _Rewards__ReprPrototype{}
+}
+
+type _Rewards__ReprPrototype struct{}
+
+func (_Rewards__ReprPrototype) NewBuilder() datamodel.NodeBuilder {
+	var nb _Rewards__ReprBuilder
+	nb.Reset()
+	return &nb
+}
+
+type _Rewards__ReprBuilder struct {
+	_Rewards__ReprAssembler
+}
+
+func (nb *_Rewards__ReprBuilder) Build() datamodel.Node {
+	if *nb.m != schema.Maybe_Value {
+		panic("invalid state: cannot call Build on an assembler that's not finished")
+	}
+	return nb.w
+}
+func (nb *_Rewards__ReprBuilder) Reset() {
+	var w _Rewards
+	var m schema.Maybe
+	*nb = _Rewards__ReprBuilder{_Rewards__ReprAssembler{w: &w, m: &m}}
+}
+
+type _Rewards__ReprAssembler struct {
+	w     *_Rewards
+	m     *schema.Maybe
+	state laState
+	f     int
+
+	cm      schema.Maybe
+	ca_kind _Int__ReprAssembler
+	ca_slot _Int__ReprAssembler
+	ca_data _Buffer__ReprAssembler
+}
+
+func (na *_Rewards__ReprAssembler) reset() {
+	na.state = laState_initial
+	na.f = 0
+	na.ca_kind.reset()
+	na.ca_slot.reset()
+	na.ca_data.reset()
+}
+func (_Rewards__ReprAssembler) BeginMap(sizeHint int64) (datamodel.MapAssembler, error) {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.BeginMap(0)
+}
+func (na *_Rewards__ReprAssembler) BeginList(int64) (datamodel.ListAssembler, error) {
+	switch *na.m {
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: it makes no sense to 'begin' twice on the same assembler!")
+	}
+	*na.m = midvalue
+	if na.w == nil {
+		na.w = &_Rewards{}
+	}
+	return na, nil
+}
+func (na *_Rewards__ReprAssembler) AssignNull() error {
+	switch *na.m {
+	case allowNull:
+		*na.m = schema.Maybe_Null
+		return nil
+	case schema.Maybe_Absent:
+		return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr.Repr"}.AssignNull()
+	case schema.Maybe_Value, schema.Maybe_Null:
+		panic("invalid state: cannot assign into assembler that's already finished")
+	case midvalue:
+		panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+	}
+	panic("unreachable")
+}
+func (_Rewards__ReprAssembler) AssignBool(bool) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignBool(false)
+}
+func (_Rewards__ReprAssembler) AssignInt(int64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignInt(0)
+}
+func (_Rewards__ReprAssembler) AssignFloat(float64) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignFloat(0)
+}
+func (_Rewards__ReprAssembler) AssignString(string) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignString("")
+}
+func (_Rewards__ReprAssembler) AssignBytes([]byte) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignBytes(nil)
+}
+func (_Rewards__ReprAssembler) AssignLink(datamodel.Link) error {
+	return mixins.ListAssembler{TypeName: "ipldsch.Rewards.Repr"}.AssignLink(nil)
+}
+func (na *_Rewards__ReprAssembler) AssignNode(v datamodel.Node) error {
+	if v.IsNull() {
+		return na.AssignNull()
+	}
+	if v2, ok := v.(*_Rewards); ok {
+		switch *na.m {
+		case schema.Maybe_Value, schema.Maybe_Null:
+			panic("invalid state: cannot assign into assembler that's already finished")
+		case midvalue:
+			panic("invalid state: cannot assign null into an assembler that's already begun working on recursive structures!")
+		}
+		if na.w == nil {
+			na.w = v2
+			*na.m = schema.Maybe_Value
+			return nil
+		}
+		*na.w = *v2
+		*na.m = schema.Maybe_Value
+		return nil
+	}
+	if v.Kind() != datamodel.Kind_List {
+		return datamodel.ErrWrongKind{TypeName: "ipldsch.Rewards.Repr", MethodName: "AssignNode", AppropriateKind: datamodel.KindSet_JustList, ActualKind: v.Kind()}
+	}
+	itr := v.ListIterator()
+	for !itr.Done() {
+		_, v, err := itr.Next()
+		if err != nil {
+			return err
+		}
+		if err := na.AssembleValue().AssignNode(v); err != nil {
+			return err
+		}
+	}
+	return na.Finish()
+}
+func (_Rewards__ReprAssembler) Prototype() datamodel.NodePrototype {
+	return _Rewards__ReprPrototype{}
+}
+func (la *_Rewards__ReprAssembler) valueFinishTidy() bool {
+	switch la.f {
+	case 0:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
+	case 1:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
+	case 2:
+		switch la.cm {
+		case schema.Maybe_Value:
+			la.cm = schema.Maybe_Absent
+			la.state = laState_initial
+			la.f++
+			return true
+		default:
+			return false
+		}
+	default:
+		panic("unreachable")
+	}
+}
+func (la *_Rewards__ReprAssembler) AssembleValue() datamodel.NodeAssembler {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: AssembleValue cannot be called when still in the middle of assembling the previous value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: AssembleValue cannot be called on an assembler that's already finished")
+	}
+	if la.f >= 3 {
+		return _ErrorThunkAssembler{schema.ErrNoSuchField{Type: nil /*TODO*/, Field: datamodel.PathSegmentOfInt(3)}}
+	}
+	la.state = laState_midValue
+	switch la.f {
+	case 0:
+		la.ca_kind.w = &la.w.kind
+		la.ca_kind.m = &la.cm
+		return &la.ca_kind
+	case 1:
+		la.ca_slot.w = &la.w.slot
+		la.ca_slot.m = &la.cm
+		return &la.ca_slot
+	case 2:
+		la.ca_data.w = &la.w.data
+		la.ca_data.m = &la.cm
+		return &la.ca_data
+	default:
+		panic("unreachable")
+	}
+}
+func (la *_Rewards__ReprAssembler) Finish() error {
+	switch la.state {
+	case laState_initial:
+		// carry on
+	case laState_midValue:
+		if !la.valueFinishTidy() {
+			panic("invalid state: Finish cannot be called when in the middle of assembling a value")
+		} // if tidy success: carry on
+	case laState_finished:
+		panic("invalid state: Finish cannot be called on an assembler that's already finished")
+	}
+	la.state = laState_finished
+	*la.m = schema.Maybe_Value
+	return nil
+}
+func (la *_Rewards__ReprAssembler) ValuePrototype(_ int64) datamodel.NodePrototype {
+	panic("todo structbuilder tuplerepr valueprototype")
 }
 
 func (n _Shredding) FieldEntryEndIdx() Int {

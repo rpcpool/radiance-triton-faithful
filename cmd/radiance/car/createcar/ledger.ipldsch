@@ -17,6 +17,13 @@ type Block struct {
   shredding [ Shredding ]
   entries   [ Link ] # [ &Entry ]
   meta      SlotMeta
+  rewards   Link     # &Rewards
+} representation tuple
+
+type Rewards struct {
+  kind       Int
+  slot       Int
+  data       Buffer
 } representation tuple
 
 type SlotMeta struct {

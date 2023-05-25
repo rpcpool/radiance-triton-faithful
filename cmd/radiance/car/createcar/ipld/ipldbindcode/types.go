@@ -25,9 +25,15 @@ type (
 		Shredding List__Shredding
 		Entries   List__Link
 		Meta      SlotMeta
+		Rewards   datamodel.Link
 	}
 )
 
+type Rewards struct {
+	Kind int
+	Slot int
+	Data []uint8
+}
 type SlotMeta struct {
 	Parent_slot int
 	Blocktime   int

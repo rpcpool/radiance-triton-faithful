@@ -19,6 +19,7 @@ type schemaSlab struct {
 	Subset          schema.TypedPrototype
 	List__Shredding schema.TypedPrototype
 	Block           schema.TypedPrototype
+	Rewards         schema.TypedPrototype
 	SlotMeta        schema.TypedPrototype
 	Shredding       schema.TypedPrototype
 	Entry           schema.TypedPrototype
@@ -56,6 +57,11 @@ func init() {
 	Prototypes.Block = bindnode.Prototype(
 		(*Block)(nil),
 		ts.TypeByName("Block"),
+	)
+
+	Prototypes.Rewards = bindnode.Prototype(
+		(*Rewards)(nil),
+		ts.TypeByName("Rewards"),
 	)
 
 	Prototypes.SlotMeta = bindnode.Prototype(
