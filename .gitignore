@@ -4,6 +4,7 @@
 # Build artifacts
 _bin
 /radiance
+/dump2
 /cmd/radiance/radiance
 /vendor
 /facebook
