@@ -200,6 +200,24 @@ func main() {
 				spew.Dump(decoded)
 				numNodesPrinted++
 			}
+		case iplddecoders.KindRewards:
+			decoded, err := iplddecoders.DecodeRewards(block.RawData())
+			if err != nil {
+				panic(err)
+			}
+			if filter.has(int(iplddecoders.KindRewards)) || filter.empty() {
+				spew.Dump(decoded)
+				numNodesPrinted++
+				{
+					// try decoding as protobuf
+					parsed, err := blockstore.ParseRewards(decoded.Data)
+					if err != nil {
+						fmt.Println("Rewards are not protobuf: " + err.Error())
+					} else {
+						spew.Dump(parsed)
+					}
+				}
+			}
 		default:
 			panic("unknown kind" + kind.String())
 		}
