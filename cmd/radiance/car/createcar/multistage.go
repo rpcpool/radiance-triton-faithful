@@ -304,6 +304,10 @@ func (cw *Multistage) OnSlotFromDB(
 	return nil
 }
 
+func getEmptyCIDLink() datamodel.Link {
+	return cidlink.Link{Cid: cid.Undef}
+}
+
 func constructBlock(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
@@ -330,20 +334,27 @@ func constructBlock(
 		return nil, fmt.Errorf("failed to process entries: %w", err)
 	}
 
-	// add the rewards entry
-	rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
-		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
-		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
-		qp.MapEntry(ma, "data", qp.Bytes(CompressZstd(rewards)))
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to build reward node: %w", err)
-	}
-	rewardsLink, err := ms.Store(
-		rewardsNode.(schema.TypedNode).Representation(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store rewards node: %w", err)
+	var rewardsNodeLink datamodel.Link
+
+	if len(rewards) > 0 {
+		// add the rewards entry
+		rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
+			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
+			qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
+			qp.MapEntry(ma, "data", qp.Bytes(CompressZstd(rewards)))
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to build reward node: %w", err)
+		}
+		rewardsLink, err := ms.Store(
+			rewardsNode.(schema.TypedNode).Representation(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to store rewards node: %w", err)
+		}
+		rewardsNodeLink = rewardsLink
+	} else {
+		rewardsNodeLink = getEmptyCIDLink()
 	}
 
 	blockNode, err := qp.BuildMap(ipldbindcode.Prototypes.Block, -1, func(ma datamodel.MapAssembler) {
@@ -375,7 +386,7 @@ func constructBlock(
 				qp.MapEntry(ma, "blocktime", qp.Int(int64(blockTime)))
 			}),
 		)
-		qp.MapEntry(ma, "rewards", qp.Link(rewardsLink))
+		qp.MapEntry(ma, "rewards", qp.Link(rewardsNodeLink))
 	})
 	if err != nil {
 		return nil, err
