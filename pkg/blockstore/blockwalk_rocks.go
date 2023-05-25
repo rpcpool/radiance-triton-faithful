@@ -207,7 +207,9 @@ func (m *BlockWalk) pop() error {
 	if m.root == nil {
 		klog.Infof("pop called with no open DB")
 	}
-	m.root.Close()
+	if m.root != nil {
+		m.root.Close()
+	}
 	m.root = nil
 	m.handles[0].DB.Close()
 	m.handles = m.handles[1:]
