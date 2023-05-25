@@ -155,7 +155,7 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					status, err := blockstore.ParseTransactionStatusMeta(uncompressedMeta)
+					status, err := blockstore.ParseAnyTransactionStatusMeta(uncompressedMeta)
 					if err != nil {
 						panic(err)
 					}
