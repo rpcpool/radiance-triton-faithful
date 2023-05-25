@@ -83,16 +83,27 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
-	key := BlocktimeKey(slot)
-	blockTime, err := w.walker.BlockTime(key)
+	blockTime, err := w.walker.BlockTime(BlocktimeKey(slot))
 	if err != nil {
 		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
+	}
+
+	rewards, err := w.walker.Rewards(slot)
+	if err != nil {
+		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
 
 	// subgraphStore will contain the subgraph for the block
 	subgraphStore := newMemoryBlockstore(w.slotMeta.Slot)
 	// - [x] construct the block
-	blockRootLink, err := constructBlock(subgraphStore, w.slotMeta, blockTime, entries, metas)
+	blockRootLink, err := constructBlock(
+		subgraphStore,
+		w.slotMeta,
+		blockTime,
+		entries,
+		metas,
+		rewards,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
 	}
@@ -299,6 +310,7 @@ func constructBlock(
 	blockTime uint64,
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
+	rewards []byte,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -317,6 +329,23 @@ func constructBlock(
 	if err != nil {
 		return nil, fmt.Errorf("failed to process entries: %w", err)
 	}
+
+	// add the rewards entry
+	rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
+		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
+		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
+		qp.MapEntry(ma, "data", qp.Bytes(rewards))
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to build reward node: %w", err)
+	}
+	rewardsLink, err := ms.Store(
+		rewardsNode.(schema.TypedNode).Representation(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to store rewards node: %w", err)
+	}
+
 	blockNode, err := qp.BuildMap(ipldbindcode.Prototypes.Block, -1, func(ma datamodel.MapAssembler) {
 		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindBlock)))
 		qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
@@ -346,6 +375,7 @@ func constructBlock(
 				qp.MapEntry(ma, "blocktime", qp.Int(int64(blockTime)))
 			}),
 		)
+		qp.MapEntry(ma, "rewards", qp.Link(rewardsLink))
 	})
 	if err != nil {
 		return nil, err

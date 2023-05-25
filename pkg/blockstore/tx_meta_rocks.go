@@ -131,7 +131,7 @@ func (d *DB) GetBlockTime(key []byte) (uint64, error) {
 	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
 }
 
-func (d *DB) GetRewards(slot uint64) (*confirmed_block.Rewards, error) {
+func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 	if d.CfRewards == nil {
 		return nil, nil
 	}
@@ -149,7 +149,7 @@ func (d *DB) GetRewards(slot uint64) (*confirmed_block.Rewards, error) {
 	if got == nil || got.Size() == 0 {
 		return nil, nil
 	}
-	return ParseRewards(got.Data())
+	return cloneBytes(got.Data()), nil
 }
 
 func ParseRewards(buf []byte) (*confirmed_block.Rewards, error) {

@@ -16,6 +16,7 @@ const (
 	KindBlock
 	KindSubset
 	KindEpoch
+	KindRewards
 )
 
 // String returns the string representation of the Kind.
@@ -31,6 +32,8 @@ func (k Kind) String() string {
 		return "Subset"
 	case KindEpoch:
 		return "Epoch"
+	case KindRewards:
+		return "Rewards"
 	default:
 		return fmt.Sprintf("Unknown kind %d", int(k))
 	}
@@ -96,6 +99,18 @@ func DecodeTransaction(transactionRaw []byte) (*ipldbindcode.Transaction, error)
 	return &transaction, nil
 }
 
+func DecodeRewards(rewardsRaw []byte) (*ipldbindcode.Rewards, error) {
+	var rewards ipldbindcode.Rewards
+	_, err := ipld.Unmarshal(rewardsRaw, dagcbor.Decode, &rewards, ipldbindcode.Prototypes.Rewards.Type())
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode Rewards node: %w", err)
+	}
+	if rewards.Kind != int(KindRewards) {
+		return nil, fmt.Errorf("expected Rewards node, got %s", Kind(rewards.Kind))
+	}
+	return &rewards, nil
+}
+
 func DecodeAny(anyRaw []byte) (any, error) {
 	if len(anyRaw) == 0 {
 		return nil, fmt.Errorf("empty bytes")
@@ -113,6 +128,8 @@ func DecodeAny(anyRaw []byte) (any, error) {
 		return DecodeSubset(anyRaw)
 	case KindEpoch:
 		return DecodeEpoch(anyRaw)
+	case KindRewards:
+		return DecodeRewards(anyRaw)
 	default:
 		return nil, fmt.Errorf("unknown kind %d", int(kind))
 	}

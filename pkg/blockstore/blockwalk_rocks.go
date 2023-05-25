@@ -191,6 +191,11 @@ func (m *BlockWalk) BlockTime(key []byte) (uint64, error) {
 	return h.DB.GetBlockTime(key)
 }
 
+func (m *BlockWalk) Rewards(slot uint64) ([]byte, error) {
+	h := m.handles[0]
+	return h.DB.GetRewards(slot)
+}
+
 // pop closes the current open DB.
 func (m *BlockWalk) pop() error {
 	if m.onBeforePop != nil {
