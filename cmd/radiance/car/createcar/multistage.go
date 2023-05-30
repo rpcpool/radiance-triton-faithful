@@ -212,10 +212,10 @@ func NewMultistage(
 					panic(fmt.Errorf("slot %d is already processed", subtree.slot))
 				}
 				// write the blocks to the CAR file:
-				for _, block := range subtree.blocks {
+				for blockIndex, block := range subtree.blocks {
 					err := cw.storageCar.WriteBlock(block)
 					if err != nil {
-						panic(fmt.Errorf("failed to write block to CAR: %w", err))
+						panic(fmt.Errorf("failed to write node #%d for slot %d: %w", blockIndex, subtree.slot, err))
 					}
 				}
 				ms.waitResultsReceived.Done()
