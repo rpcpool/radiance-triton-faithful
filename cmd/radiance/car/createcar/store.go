@@ -65,7 +65,13 @@ func (c *carHandle) close() (err error) {
 	return
 }
 
+const MAX_BLOCK_SIZE = 1 << 20
+
 func (c *carHandle) WriteBlock(block car.Block) error {
+	totalLength := len(block.Data) + block.Cid.ByteLen()
+	if totalLength > MAX_BLOCK_SIZE {
+		return fmt.Errorf("block too large: %d bytes (max = %d)", totalLength, MAX_BLOCK_SIZE)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.writer.WriteBlock(block)

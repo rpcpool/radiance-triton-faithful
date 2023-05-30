@@ -17,6 +17,7 @@ const (
 	KindSubset
 	KindEpoch
 	KindRewards
+	KindDataFrame
 )
 
 // String returns the string representation of the Kind.
@@ -34,6 +35,8 @@ func (k Kind) String() string {
 		return "Epoch"
 	case KindRewards:
 		return "Rewards"
+	case KindDataFrame:
+		return "DataFrame"
 	default:
 		return fmt.Sprintf("Unknown kind %d", int(k))
 	}
@@ -111,6 +114,18 @@ func DecodeRewards(rewardsRaw []byte) (*ipldbindcode.Rewards, error) {
 	return &rewards, nil
 }
 
+func DecodeDataFrame(dataFrameRaw []byte) (*ipldbindcode.DataFrame, error) {
+	var dataFrame ipldbindcode.DataFrame
+	_, err := ipld.Unmarshal(dataFrameRaw, dagcbor.Decode, &dataFrame, ipldbindcode.Prototypes.DataFrame.Type())
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode DataFrame node: %w", err)
+	}
+	if dataFrame.Kind != int(KindDataFrame) {
+		return nil, fmt.Errorf("expected DataFrame node, got %s", Kind(dataFrame.Kind))
+	}
+	return &dataFrame, nil
+}
+
 func DecodeAny(anyRaw []byte) (any, error) {
 	if len(anyRaw) == 0 {
 		return nil, fmt.Errorf("empty bytes")
@@ -130,6 +145,8 @@ func DecodeAny(anyRaw []byte) (any, error) {
 		return DecodeEpoch(anyRaw)
 	case KindRewards:
 		return DecodeRewards(anyRaw)
+	case KindDataFrame:
+		return DecodeDataFrame(anyRaw)
 	default:
 		return nil, fmt.Errorf("unknown kind %d", int(kind))
 	}

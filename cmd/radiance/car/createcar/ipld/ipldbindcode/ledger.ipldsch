@@ -23,7 +23,7 @@ type Block struct {
 type Rewards struct {
   kind       Int
   slot       Int
-  data       Buffer
+  data       DataFrame
 } representation tuple
 
 type SlotMeta struct {
@@ -45,10 +45,19 @@ type Entry struct {
 
 type Transaction struct {
   kind     Int
-  data     Buffer
-  metadata Buffer
+  data     DataFrame
+  metadata DataFrame
   slot     Int
 } representation tuple
 
 type Hash bytes
 type Buffer bytes
+
+type DataFrame struct {
+  kind  Int
+  hash  Int
+  index Int
+  total Int
+  data  Buffer
+  next  [ Link ] # [ &DataFrame ]
+} representation tuple

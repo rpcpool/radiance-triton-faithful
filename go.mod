@@ -21,6 +21,7 @@ require (
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ipfs-blockstore v1.3.0
+	github.com/ipfs/go-ipfs-chunker v0.0.6
 	github.com/ipfs/go-ipld-cbor v0.0.6
 	github.com/ipfs/go-libipfs v0.6.2
 	github.com/ipld/go-car v0.6.0
@@ -108,6 +109,7 @@ require (
 	github.com/josharian/native v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.4 // indirect
+	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/marten-seemann/qtls-go1-18 v0.1.2 // indirect
 	github.com/marten-seemann/qtls-go1-19 v0.1.0 // indirect
@@ -142,6 +144,7 @@ require (
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230126041949-52956bd4c9aa // indirect
+	github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f // indirect
 	go.mongodb.org/mongo-driver v1.11.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/otel v1.14.0 // indirect

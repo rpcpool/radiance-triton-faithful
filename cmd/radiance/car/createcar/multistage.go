@@ -2,6 +2,7 @@ package createcar
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"path/filepath"
@@ -92,6 +93,9 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
+	// if false {
+	// 	rewards = getRandomBytes(10 * MiB)
+	// }
 
 	// subgraphStore will contain the subgraph for the block
 	subgraphStore := newMemoryBlockstore(w.slotMeta.Slot)
@@ -305,7 +309,16 @@ func (cw *Multistage) OnSlotFromDB(
 }
 
 func getEmptyCIDLink() datamodel.Link {
-	return cidlink.Link{Cid: cid.Undef}
+	return cidlink.Link{Cid: firecar.DummyCID}
+}
+
+func getRandomBytes(l int) []byte {
+	b := make([]byte, l)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 func constructBlock(
@@ -314,7 +327,7 @@ func constructBlock(
 	blockTime uint64,
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
-	rewards []byte,
+	rewardsBlob []byte,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -336,12 +349,85 @@ func constructBlock(
 
 	var rewardsNodeLink datamodel.Link
 
-	if len(rewards) > 0 {
+	if len(rewardsBlob) > 0 {
+		if false {
+			// add the rewards entry
+			rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
+				qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
+				qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
+				qp.MapEntry(ma, "data", qp.Map(-1, frameToDatamodelNodeAssembler(&ipldbindcode.DataFrame{
+					Kind:  int(iplddecoders.KindRewards),
+					Hash:  1234567891011121314,
+					Index: 0,
+					Total: 1,
+					Data:  []byte{},
+					Next: ipldbindcode.List__Link{
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+					},
+				})))
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to build reward node: %w", err)
+			}
+			if false {
+				node := rewardsNode.(schema.TypedNode).Representation()
+				// encode to cbor
+				block, err := firecar.NewBlockFromCBOR(node, uint64(multicodec.DagCbor))
+				if err != nil {
+					return nil, err
+				}
+				totalSize := len(block.Data) + block.Cid.ByteLen()
+				panic(fmt.Sprintf("total size without data: %d", totalSize))
+			}
+			{
+
+				nnn, err := qp.BuildMap(ipldbindcode.Prototypes.DataFrame, -1, frameToDatamodelNodeAssembler(&ipldbindcode.DataFrame{
+					Kind:  int(iplddecoders.KindRewards),
+					Hash:  1234567891011121314,
+					Index: 0,
+					Total: 1,
+					Data:  []byte{},
+					Next: ipldbindcode.List__Link{
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+						cidlink.Link{Cid: firecar.CBOR_SHA256_DUMMY_CID},
+					},
+				}))
+				if err != nil {
+					return nil, fmt.Errorf("failed to build reward node: %w", err)
+				}
+				{
+					node := nnn.(schema.TypedNode).Representation()
+					// encode to cbor
+					block, err := firecar.NewBlockFromCBOR(node, uint64(multicodec.DagCbor))
+					if err != nil {
+						return nil, err
+					}
+					totalSize := len(block.Data) + block.Cid.ByteLen()
+					panic(fmt.Sprintf("total size dataFrame without data: %d", totalSize))
+				}
+			}
+		}
+		rewardsFirstFrame, err := CreateAndStoreFrames(
+			ms.Store,
+			CompressZstd(rewardsBlob),
+			(MaxObjectSize - 263 - 300),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create rewards frames: %w", err)
+		}
+
 		// add the rewards entry
 		rewardsNode, err := qp.BuildMap(ipldbindcode.Prototypes.Rewards, -1, func(ma datamodel.MapAssembler) {
 			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindRewards)))
 			qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
-			qp.MapEntry(ma, "data", qp.Bytes(CompressZstd(rewards)))
+			qp.MapEntry(ma, "data", qp.Map(-1, frameToDatamodelNodeAssembler(rewardsFirstFrame)))
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to build reward node: %w", err)
@@ -517,11 +603,34 @@ func onTx(
 		meta := metas[txIndex]
 		txMeta := meta.Raw
 
+		// if false {
+		// 	txData = getRandomBytes(3 * MiB)
+		// 	txMeta = getRandomBytes(3 * MiB)
+		// }
+
+		txDataFirstFrame, err := CreateAndStoreFrames(
+			ms.Store,
+			txData,
+			(MaxObjectSize-100)/2,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create frames for data of transaction %s: %w", firstSig, err)
+		}
+
+		txMetaFirstFrame, err := CreateAndStoreFrames(
+			ms.Store,
+			CompressZstd(txMeta),
+			(MaxObjectSize-100)/2,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create frames for metadata of transaction %s: %w", firstSig, err)
+		}
+
 		// - construct a Transaction object
 		transactionNode, err := qp.BuildMap(ipldbindcode.Prototypes.Transaction, -1, func(ma datamodel.MapAssembler) {
 			qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindTransaction)))
-			qp.MapEntry(ma, "data", qp.Bytes(txData))
-			qp.MapEntry(ma, "metadata", qp.Bytes(CompressZstd(txMeta)))
+			qp.MapEntry(ma, "data", qp.Map(-1, frameToDatamodelNodeAssembler(txDataFirstFrame)))
+			qp.MapEntry(ma, "metadata", qp.Map(-1, frameToDatamodelNodeAssembler(txMetaFirstFrame)))
 			qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
 		})
 		if err != nil {

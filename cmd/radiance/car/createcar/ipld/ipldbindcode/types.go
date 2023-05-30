@@ -32,7 +32,7 @@ type (
 type Rewards struct {
 	Kind int
 	Slot int
-	Data []uint8
+	Data DataFrame
 }
 type SlotMeta struct {
 	Parent_slot int
@@ -50,11 +50,18 @@ type Entry struct {
 }
 type Transaction struct {
 	Kind     int
-	Data     []uint8
-	Metadata []uint8
+	Data     DataFrame
+	Metadata DataFrame
 	Slot     int
 }
-
+type DataFrame struct {
+	Kind  int
+	Hash  int
+	Index int
+	Total int
+	Data  []uint8
+	Next  List__Link
+}
 type (
 	Hash   []uint8
 	Buffer []uint8

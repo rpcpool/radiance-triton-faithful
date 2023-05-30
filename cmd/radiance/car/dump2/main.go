@@ -1,20 +1,27 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
+	"reflect"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
+	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/klauspost/compress/zstd"
+	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"k8s.io/klog/v2"
@@ -110,6 +117,7 @@ func main() {
 			klog.Infof("- %s", iplddecoders.Kind(v).String())
 		}
 	}
+	hashToFrames := make(map[int][]CidToDataFrame)
 	for {
 		block, err := rd.Next()
 		if errors.Is(err, io.EOF) {
@@ -134,14 +142,15 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			{
+			doPrint := filter.has(int(iplddecoders.KindTransaction)) || filter.empty()
+			if decoded.Data.Total == 1 {
+				completeData := decoded.Data.Data
 				var tx solana.Transaction
-				if err := bin.UnmarshalBin(&tx, decoded.Data); err != nil {
+				if err := bin.UnmarshalBin(&tx, completeData); err != nil {
 					panic(err)
 				} else if len(tx.Signatures) == 0 {
 					panic("no signatures")
 				}
-				doPrint := filter.has(int(iplddecoders.KindTransaction)) || filter.empty()
 				if doPrint {
 					fmt.Println("sig=" + tx.Signatures[0].String())
 					spew.Dump(decoded)
@@ -150,8 +159,15 @@ func main() {
 					}
 					numNodesPrinted++
 				}
-				if len(decoded.Metadata) > 0 {
-					uncompressedMeta, err := decompressZstd(decoded.Metadata)
+			} else {
+				if doPrint {
+					fmt.Println("transaction data is split into multiple blocks; skipping printing")
+				}
+			}
+			if decoded.Metadata.Total == 1 {
+				completeBuffer := decoded.Metadata.Data
+				if len(completeBuffer) > 0 {
+					uncompressedMeta, err := decompressZstd(completeBuffer)
 					if err != nil {
 						panic(err)
 					}
@@ -162,6 +178,10 @@ func main() {
 					if doPrint {
 						spew.Dump(status)
 					}
+				}
+			} else {
+				if doPrint {
+					fmt.Println("transaction metadata is split into multiple blocks; skipping printing")
 				}
 			}
 		case iplddecoders.KindEntry:
@@ -205,32 +225,109 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if filter.has(int(iplddecoders.KindRewards)) || filter.empty() {
+			doPrint := filter.has(int(iplddecoders.KindRewards)) || filter.empty()
+			if doPrint {
 				spew.Dump(decoded)
 				numNodesPrinted++
-				if len(decoded.Data) > 0 {
-					uncompressedRewards, err := decompressZstd(decoded.Data)
-					if err != nil {
-						panic(err)
+
+				hashToFrames[decoded.Data.Hash] = append(hashToFrames[decoded.Data.Hash], CidToDataFrame{
+					Cid:       cid.Undef,
+					DataFrame: decoded.Data,
+				})
+
+				if decoded.Data.Total == 1 {
+					completeBuffer := decoded.Data.Data
+					if len(completeBuffer) > 0 {
+						uncompressedRewards, err := decompressZstd(completeBuffer)
+						if err != nil {
+							panic(err)
+						}
+						// try decoding as protobuf
+						parsed, err := blockstore.ParseRewards(uncompressedRewards)
+						if err != nil {
+							fmt.Println("Rewards are not protobuf: " + err.Error())
+						} else {
+							spew.Dump(parsed)
+						}
 					}
-					// try decoding as protobuf
-					parsed, err := blockstore.ParseRewards(uncompressedRewards)
-					if err != nil {
-						fmt.Println("Rewards are not protobuf: " + err.Error())
-					} else {
-						spew.Dump(parsed)
-					}
+				} else {
+					fmt.Println("rewards data is split into multiple blocks; skipping printing")
 				}
 			}
+		case iplddecoders.KindDataFrame:
+			decoded, err := iplddecoders.DecodeDataFrame(block.RawData())
+			if err != nil {
+				panic(err)
+			}
+			// spew.Dump(decoded)
+
+			hashToFrames[decoded.Hash] = append(hashToFrames[decoded.Hash], CidToDataFrame{
+				Cid:       block.Cid(),
+				DataFrame: *decoded,
+			})
+
 		default:
-			panic("unknown kind" + kind.String())
+			panic("unknown kind: " + kind.String())
 		}
 	}
 	klog.Infof("CAR file traversed successfully")
+
+	{
+		// now try to put the frames back together
+		for hash, frames := range hashToFrames {
+			// sort by index
+			sort.Slice(frames, func(i, j int) bool {
+				return frames[i].DataFrame.Index < frames[j].DataFrame.Index
+			})
+			var buf bytes.Buffer
+			for _, frame := range frames {
+				buf.Write(frame.DataFrame.Data)
+			}
+			// rehash
+			recomputedHash := hashBytes(buf.Bytes())
+			if uint64(hash) != recomputedHash {
+				panic("hash mismatch")
+			} else {
+				fmt.Println("hash matches")
+			}
+			// now check if the reported next cids match the actual next cids
+			actualOrderOfCids := make([]cid.Cid, 0, len(frames))
+			for _, frame := range frames {
+				if frame.Cid == cid.Undef {
+					continue
+				}
+				actualOrderOfCids = append(actualOrderOfCids, frame.Cid)
+			}
+			wantedOrderOfCids := make([]cid.Cid, 0, len(frames))
+			for _, frame := range frames {
+				for _, nextCid := range frame.DataFrame.Next {
+					wantedOrderOfCids = append(wantedOrderOfCids, nextCid.(cidlink.Link).Cid)
+				}
+			}
+			if !reflect.DeepEqual(actualOrderOfCids, wantedOrderOfCids) {
+				spew.Dump(actualOrderOfCids)
+				spew.Dump(wantedOrderOfCids)
+				panic("next cids mismatch")
+			} else {
+				fmt.Println("next cids match")
+			}
+		}
+	}
+}
+
+type CidToDataFrame struct {
+	Cid       cid.Cid
+	DataFrame ipldbindcode.DataFrame
 }
 
 var decoder, _ = zstd.NewReader(nil)
 
 func decompressZstd(data []byte) ([]byte, error) {
 	return decoder.DecodeAll(data, nil)
+}
+
+func hashBytes(data []byte) uint64 {
+	h := fnv.New64a()
+	h.Write(data)
+	return h.Sum64()
 }

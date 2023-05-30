@@ -26,6 +26,7 @@ type schemaSlab struct {
 	Transaction     schema.TypedPrototype
 	Hash            schema.TypedPrototype
 	Buffer          schema.TypedPrototype
+	DataFrame       schema.TypedPrototype
 }
 
 func init() {
@@ -92,5 +93,10 @@ func init() {
 	Prototypes.Buffer = bindnode.Prototype(
 		(*Buffer)(nil),
 		ts.TypeByName("Buffer"),
+	)
+
+	Prototypes.DataFrame = bindnode.Prototype(
+		(*DataFrame)(nil),
+		ts.TypeByName("DataFrame"),
 	)
 }
