@@ -116,8 +116,8 @@ func main() {
 			klog.Infof("- %s", iplddecoders.Kind(v).String())
 		}
 	}
-	nodeKindCounts := make(map[iplddecoders.Kind]int)
-	nodeKindTotalSizes := make(map[iplddecoders.Kind]int64)
+	nodeKindCounts := make(map[iplddecoders.Kind]int64)
+	nodeKindTotalSizes := make(map[iplddecoders.Kind]uint64)
 	for {
 		block, err := rd.Next()
 		if errors.Is(err, io.EOF) {
@@ -133,7 +133,7 @@ func main() {
 		}
 		kind := iplddecoders.Kind(block.RawData()[1])
 		nodeKindCounts[kind]++
-		nodeKindTotalSizes[kind] += int64(len(block.RawData()))
+		nodeKindTotalSizes[kind] += uint64(len(block.RawData()))
 
 		doPrint := filter.has(int(kind)) || filter.empty()
 		if doPrint {
@@ -275,15 +275,15 @@ func main() {
 		})
 		fmt.Println("Node kind counts:")
 		for _, kind := range nodeKinds {
-			fmt.Printf("	%s: %d\n",
+			fmt.Printf("	%s: %s items\n",
 				forceStringLengthWithPadding(kind.String(), len("Transaction")),
-				nodeKindCounts[kind],
+				humanize.Comma(nodeKindCounts[kind]),
 			)
 		}
 		fmt.Println()
 	}
 	// calculate total size of all blocks
-	var totalSize int64
+	var totalSize uint64
 	for _, size := range nodeKindTotalSizes {
 		totalSize += size
 	}
@@ -304,7 +304,7 @@ func main() {
 				"	%s: %d bytes (%s), %.2f%% of total\n",
 				forceStringLengthWithPadding(kind.String(), len("Transaction")),
 				nodeKindTotalSizes[kind],
-				humanize.Bytes(uint64(nodeKindTotalSizes[kind])),
+				humanize.Bytes((nodeKindTotalSizes[kind])),
 				percentage,
 			)
 		}
