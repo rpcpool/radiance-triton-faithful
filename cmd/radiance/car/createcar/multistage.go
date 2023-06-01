@@ -93,7 +93,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
-	// if false {
+	// if true {
 	// 	rewards = getRandomBytes(10 * MiB)
 	// }
 
@@ -603,15 +603,18 @@ func onTx(
 		meta := metas[txIndex]
 		txMeta := meta.Raw
 
-		// if false {
+		// if true && !gotOneRandomBigTx {
 		// 	txData = getRandomBytes(3 * MiB)
 		// 	txMeta = getRandomBytes(3 * MiB)
+		// 	gotOneRandomBigTx = true
 		// }
+
+		firstFrameSize := (MaxObjectSize - 100 - 300) / 2
 
 		txDataFirstFrame, err := CreateAndStoreFrames(
 			ms.Store,
 			txData,
-			(MaxObjectSize-100)/2,
+			firstFrameSize,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create frames for data of transaction %s: %w", firstSig, err)
@@ -620,7 +623,7 @@ func onTx(
 		txMetaFirstFrame, err := CreateAndStoreFrames(
 			ms.Store,
 			CompressZstd(txMeta),
-			(MaxObjectSize-100)/2,
+			firstFrameSize,
 		)
 		if err != nil {
 			return fmt.Errorf("failed to create frames for metadata of transaction %s: %w", firstSig, err)

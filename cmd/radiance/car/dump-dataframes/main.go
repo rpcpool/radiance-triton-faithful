@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,17 +9,17 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dustin/go-humanize"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/klauspost/compress/zstd"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
@@ -116,8 +117,7 @@ func main() {
 			klog.Infof("- %s", iplddecoders.Kind(v).String())
 		}
 	}
-	nodeKindCounts := make(map[iplddecoders.Kind]int)
-	nodeKindTotalSizes := make(map[iplddecoders.Kind]int64)
+	hashToFrames := make(map[int][]CidToDataFrame)
 	for {
 		block, err := rd.Next()
 		if errors.Is(err, io.EOF) {
@@ -135,8 +135,6 @@ func main() {
 		if printID {
 			fmt.Printf("\nCID=%s Multicodec=%#x Kind=%s\n", block.Cid(), block.Cid().Type(), kind)
 		}
-		nodeKindCounts[kind]++
-		nodeKindTotalSizes[kind] += int64(len(block.RawData()))
 
 		switch kind {
 		case iplddecoders.KindTransaction:
@@ -232,6 +230,11 @@ func main() {
 				spew.Dump(decoded)
 				numNodesPrinted++
 
+				hashToFrames[decoded.Data.Hash] = append(hashToFrames[decoded.Data.Hash], CidToDataFrame{
+					Cid:       cid.Undef,
+					DataFrame: decoded.Data,
+				})
+
 				if decoded.Data.Total == 1 {
 					completeBuffer := decoded.Data.Data
 					if len(completeBuffer) > 0 {
@@ -252,69 +255,73 @@ func main() {
 				}
 			}
 		case iplddecoders.KindDataFrame:
-			// decoded, err := iplddecoders.DecodeDataFrame(block.RawData())
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// // spew.Dump(decoded)
+			decoded, err := iplddecoders.DecodeDataFrame(block.RawData())
+			if err != nil {
+				panic(err)
+			}
+			// spew.Dump(decoded)
+
+			hashToFrames[decoded.Hash] = append(hashToFrames[decoded.Hash], CidToDataFrame{
+				Cid:       block.Cid(),
+				DataFrame: *decoded,
+			})
+
 		default:
 			panic("unknown kind: " + kind.String())
 		}
 	}
-	fmt.Println()
-	{ // get keys so can iterate in order
-		var nodeKinds []iplddecoders.Kind
-		for kind := range nodeKindCounts {
-			nodeKinds = append(nodeKinds, kind)
-		}
-		sort.Slice(nodeKinds, func(i, j int) bool {
-			return nodeKinds[i] < nodeKinds[j]
-		})
-		fmt.Println("Node kind counts:")
-		for _, kind := range nodeKinds {
-			fmt.Printf("	%s: %d\n",
-				forceStringLengthWithPadding(kind.String(), len("Transaction")),
-				nodeKindCounts[kind],
-			)
-		}
-		fmt.Println()
-	}
-	// calculate total size of all blocks
-	var totalSize int64
-	for _, size := range nodeKindTotalSizes {
-		totalSize += size
-	}
-	fmt.Println()
-	{
-		var nodeKinds []iplddecoders.Kind
-		for kind := range nodeKindTotalSizes {
-			nodeKinds = append(nodeKinds, kind)
-		}
-		sort.Slice(nodeKinds, func(i, j int) bool {
-			return nodeKinds[i] < nodeKinds[j]
-		})
-		fmt.Println("Node kind total sizes:")
-
-		for _, kind := range nodeKinds {
-			percentage := float64(nodeKindTotalSizes[kind]) / float64(totalSize) * 100
-			fmt.Printf(
-				"	%s: %d bytes (%s), %.2f%% of total\n",
-				forceStringLengthWithPadding(kind.String(), len("Transaction")),
-				nodeKindTotalSizes[kind],
-				humanize.Bytes(uint64(nodeKindTotalSizes[kind])),
-				percentage,
-			)
-		}
-	}
-
 	klog.Infof("CAR file traversed successfully")
-}
 
-func forceStringLengthWithPadding(str string, length int) string {
-	if len(str) > length {
-		return str[:length]
+	{
+		// now try to put the frames back together
+		for hash, frames := range hashToFrames {
+			// sort by index
+			sort.Slice(frames, func(i, j int) bool {
+				return frames[i].DataFrame.Index < frames[j].DataFrame.Index
+			})
+			{
+				for _, frame := range frames {
+					frame.DataFrame.Data = nil
+					spew.Dump(frame)
+				}
+				fmt.Println("----------------------------------------------------------------------------------------")
+				continue
+				// return
+			}
+			var buf bytes.Buffer
+			for _, frame := range frames {
+				buf.Write(frame.DataFrame.Data)
+			}
+			// rehash
+			recomputedHash := hashBytes(buf.Bytes())
+			if uint64(hash) != recomputedHash {
+				panic("hash mismatch")
+			} else {
+				fmt.Println("hash matches")
+			}
+			// now check if the reported next cids match the actual next cids
+			actualOrderOfCids := make([]cid.Cid, 0, len(frames))
+			for _, frame := range frames {
+				if frame.Cid == cid.Undef {
+					continue
+				}
+				actualOrderOfCids = append(actualOrderOfCids, frame.Cid)
+			}
+			wantedOrderOfCids := make([]cid.Cid, 0, len(frames))
+			for _, frame := range frames {
+				for _, nextCid := range frame.DataFrame.Next {
+					wantedOrderOfCids = append(wantedOrderOfCids, nextCid.(cidlink.Link).Cid)
+				}
+			}
+			if !reflect.DeepEqual(actualOrderOfCids, wantedOrderOfCids) {
+				spew.Dump(actualOrderOfCids)
+				spew.Dump(wantedOrderOfCids)
+				panic("next cids mismatch")
+			} else {
+				fmt.Println("next cids match")
+			}
+		}
 	}
-	return str + strings.Repeat(" ", length-len(str))
 }
 
 type CidToDataFrame struct {
