@@ -199,6 +199,7 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
 
 	{
+		klog.Info("---")
 		// print the size of each DB directory
 		var totalSize uint64
 		hadError := false
@@ -220,6 +221,7 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	{
+		klog.Info("---")
 		timeTakenUntilAfterCARFinalization := time.Since(start)
 		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
@@ -245,6 +247,7 @@ func run(c *cobra.Command, args []string) {
 
 	if !*flagSkipHash {
 		hashStartedAt := time.Now()
+		klog.Info("---")
 		klog.Info("Calculating SHA256 hash of CAR file...")
 		gotHash, err := hashFileSha256(finalCARFilepath)
 		if err != nil {
@@ -257,6 +260,7 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	timeTaken := time.Since(start)
+	klog.Info("---")
 	klog.Infof("Total time taken: %s", timeTaken)
 
 	time.Sleep(1 * time.Second)

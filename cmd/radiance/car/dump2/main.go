@@ -132,11 +132,15 @@ func main() {
 			break
 		}
 		kind := iplddecoders.Kind(block.RawData()[1])
-		if printID {
-			fmt.Printf("\nCID=%s Multicodec=%#x Kind=%s\n", block.Cid(), block.Cid().Type(), kind)
-		}
 		nodeKindCounts[kind]++
 		nodeKindTotalSizes[kind] += int64(len(block.RawData()))
+
+		doPrint := filter.has(int(kind)) || filter.empty()
+		if doPrint {
+			fmt.Printf("\nCID=%s Multicodec=%#x Kind=%s\n", block.Cid(), block.Cid().Type(), kind)
+		} else {
+			continue
+		}
 
 		switch kind {
 		case iplddecoders.KindTransaction:
@@ -144,7 +148,6 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			doPrint := filter.has(int(iplddecoders.KindTransaction)) || filter.empty()
 			if decoded.Data.Total == 1 {
 				completeData := decoded.Data.Data
 				var tx solana.Transaction
@@ -153,7 +156,7 @@ func main() {
 				} else if len(tx.Signatures) == 0 {
 					panic("no signatures")
 				}
-				if doPrint {
+				{
 					fmt.Println("sig=" + tx.Signatures[0].String())
 					spew.Dump(decoded)
 					if prettyPrintTransactions {
@@ -162,7 +165,7 @@ func main() {
 					numNodesPrinted++
 				}
 			} else {
-				if doPrint {
+				{
 					fmt.Println("transaction data is split into multiple blocks; skipping printing")
 				}
 			}
@@ -177,12 +180,12 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					if doPrint {
+					{
 						spew.Dump(status)
 					}
 				}
 			} else {
-				if doPrint {
+				{
 					fmt.Println("transaction metadata is split into multiple blocks; skipping printing")
 				}
 			}
@@ -191,7 +194,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if filter.has(int(iplddecoders.KindEntry)) || filter.empty() {
+			{
 				spew.Dump(decoded)
 				numNodesPrinted++
 			}
@@ -200,7 +203,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if filter.has(int(iplddecoders.KindBlock)) || filter.empty() {
+			{
 				spew.Dump(decoded)
 				numNodesPrinted++
 			}
@@ -209,7 +212,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if filter.has(int(iplddecoders.KindSubset)) || filter.empty() {
+			{
 				spew.Dump(decoded)
 				numNodesPrinted++
 			}
@@ -218,7 +221,7 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if filter.has(int(iplddecoders.KindEpoch)) || filter.empty() {
+			{
 				spew.Dump(decoded)
 				numNodesPrinted++
 			}
@@ -227,8 +230,8 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			doPrint := filter.has(int(iplddecoders.KindRewards)) || filter.empty()
-			if doPrint {
+
+			{
 				spew.Dump(decoded)
 				numNodesPrinted++
 
@@ -252,11 +255,11 @@ func main() {
 				}
 			}
 		case iplddecoders.KindDataFrame:
-			// decoded, err := iplddecoders.DecodeDataFrame(block.RawData())
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// // spew.Dump(decoded)
+			decoded, err := iplddecoders.DecodeDataFrame(block.RawData())
+			if err != nil {
+				panic(err)
+			}
+			spew.Dump(decoded)
 		default:
 			panic("unknown kind: " + kind.String())
 		}
