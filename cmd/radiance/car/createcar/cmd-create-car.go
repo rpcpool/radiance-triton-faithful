@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -205,7 +204,7 @@ func run(c *cobra.Command, args []string) {
 		// save the epoch CID to a file, in the format {epoch}.cid
 		epochCIDFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.cid", epoch))
 		klog.Infof("Saving epoch CID to file: %s", epochCIDFilepath)
-		err := ioutil.WriteFile(epochCIDFilepath, []byte(epochCidString+"\n"), 0o644)
+		err := os.WriteFile(epochCIDFilepath, []byte(epochCidString+"\n"), 0o644)
 		if err != nil {
 			klog.Warningf("Failed to save epoch CID to file: %s", err)
 		}
