@@ -19,7 +19,7 @@ func GetDiskReadBytes() (uint64, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "read_bytes:") {
+		if strings.HasPrefix(line, "rchar:") {
 			v, err := getField1AsUint64(line)
 			if err != nil {
 				return 0, err
@@ -27,7 +27,7 @@ func GetDiskReadBytes() (uint64, error) {
 			return v, nil
 		}
 	}
-	return 0, fmt.Errorf("read_bytes not found")
+	return 0, fmt.Errorf("rchar not found")
 }
 
 func getField1AsUint64(line string) (uint64, error) {
@@ -49,7 +49,7 @@ func GetDiskWriteBytes() (uint64, error) {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if strings.HasPrefix(line, "write_bytes:") {
+		if strings.HasPrefix(line, "wchar:") {
 			v, err := getField1AsUint64(line)
 			if err != nil {
 				return 0, err
@@ -57,5 +57,5 @@ func GetDiskWriteBytes() (uint64, error) {
 			return v, nil
 		}
 	}
-	return 0, fmt.Errorf("write_bytes not found")
+	return 0, fmt.Errorf("wchar not found")
 }
