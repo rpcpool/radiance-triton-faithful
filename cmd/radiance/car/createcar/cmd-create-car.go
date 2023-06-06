@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/linxGnu/grocksdb"
 	"github.com/minio/sha256-simd"
 	"github.com/spf13/cobra"
@@ -198,6 +200,16 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
 	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
 
+	{
+		epochCidString := epochCID.(cidlink.Link).Cid.String()
+		// save the epoch CID to a file, in the format {epoch}-{cid}.txt
+		epochCIDFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d-%s.txt", epoch, epochCidString))
+		klog.Infof("Saving epoch CID to file: %s", epochCIDFilepath)
+		err := ioutil.WriteFile(epochCIDFilepath, []byte(epochCidString+"\n"), 0o644)
+		if err != nil {
+			klog.Warningf("Failed to save epoch CID to file: %s", err)
+		}
+	}
 	{
 		klog.Info("---")
 		// print the size of each DB directory
