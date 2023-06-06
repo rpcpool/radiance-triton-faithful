@@ -223,7 +223,7 @@ func run(c *cobra.Command, args []string) {
 				continue
 			}
 			totalSize += dbSize
-			klog.Infof("DB %s size: %s", dbPath, humanize.Bytes(uint64(dbSize)))
+			klog.Infof("- DB %s size: %s", dbPath, humanize.Bytes(uint64(dbSize)))
 		}
 		if hadError {
 			klog.Warning("Failed to get size of one or more DBs")
