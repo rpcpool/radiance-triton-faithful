@@ -202,8 +202,8 @@ func run(c *cobra.Command, args []string) {
 
 	{
 		epochCidString := epochCID.(cidlink.Link).Cid.String()
-		// save the epoch CID to a file, in the format {epoch}-{cid}.txt
-		epochCIDFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d-%s.txt", epoch, epochCidString))
+		// save the epoch CID to a file, in the format {epoch}.cid
+		epochCIDFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.cid", epoch))
 		klog.Infof("Saving epoch CID to file: %s", epochCIDFilepath)
 		err := ioutil.WriteFile(epochCIDFilepath, []byte(epochCidString+"\n"), 0o644)
 		if err != nil {
