@@ -8,7 +8,6 @@ import (
 	"runtime"
 	"sync"
 
-	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/golang/protobuf/proto"
 	"github.com/linxGnu/grocksdb"
@@ -67,41 +66,19 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 	}
 	defer got.Destroy()
 	result := make([]*TransactionStatusMetaWithRaw, len(keys))
-	for i, key := range keys {
+	for i := range keys {
 		// if got[i] == nil || got[i].Size() == 0 {
 		// 	continue
 		// }
 		// TODO: what if got[i] is empty?
 
 		metaBytes := got[i].Data()
-		txMeta, err := ParseAnyTransactionStatusMeta(metaBytes)
-		if err != nil {
-			debugSlot, debugSig := ParseTxMetadataKey(key)
-			return nil, fmt.Errorf(
-				"failed to parse tx meta for %s in slot %d: %w\n%s",
-				debugSig,
-				debugSlot,
-				err,
-				bin.FormatByteSlice(metaBytes),
-			)
-		}
 		obj := &TransactionStatusMetaWithRaw{
 			Raw: cloneBytes(metaBytes),
-		}
-		switch txMeta := txMeta.(type) {
-		case *confirmed_block.TransactionStatusMeta:
-		case *metalatest.TransactionStatusMeta:
-		case *metaoldest.TransactionStatusMeta:
-			// spew.Dump(debugSlot, debugSig.String(), txMeta)
-		default:
-			_ = txMeta
-			panic("unreachable")
 		}
 		result[i] = obj
 
 		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
-			// obj.ParsedLatest = nil
-			// obj.ParsedLegacy = nil
 			obj.Raw = nil
 		})
 	}
