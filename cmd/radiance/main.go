@@ -4,8 +4,10 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/cmd/radiance/blockstore"
@@ -49,10 +51,38 @@ var (
 	GitTag    string
 )
 
+func isAnyOf(s string, anyOf ...string) bool {
+	for _, v := range anyOf {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
 var versionCmd = cobra.Command{
 	Use:   "version",
 	Short: "Print the version number of Radiance",
 	Run: func(cmd *cobra.Command, args []string) {
-		klog.Infof("Radiance built from tag/branch %q (commit: %s)", GitTag, GitCommit)
+		fmt.Printf("Radiance.\n")
+		fmt.Printf("Tag/Branch: %s\n", GitTag)
+		fmt.Printf("Commit: %s\n", GitCommit)
+		if info, ok := debug.ReadBuildInfo(); ok {
+			fmt.Printf("More info:\n")
+			for _, setting := range info.Settings {
+				if isAnyOf(setting.Key,
+					"-compiler",
+					"GOARCH",
+					"GOOS",
+					"GOAMD64",
+					"vcs",
+					"vcs.revision",
+					"vcs.time",
+					"vcs.modified",
+				) {
+					fmt.Printf("  %s: %s\n", setting.Key, setting.Value)
+				}
+			}
+		}
 	},
 }

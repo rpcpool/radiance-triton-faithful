@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,6 +69,23 @@ func main() {
 		fmt.Printf("Dump tool for Solana CAR files.\n")
 		fmt.Printf("Tag/Branch: %s\n", GitTag)
 		fmt.Printf("Commit: %s\n", GitCommit)
+		if info, ok := debug.ReadBuildInfo(); ok {
+			fmt.Printf("More info:\n")
+			for _, setting := range info.Settings {
+				if isAnyOf(setting.Key,
+					"-compiler",
+					"GOARCH",
+					"GOOS",
+					"GOAMD64",
+					"vcs",
+					"vcs.revision",
+					"vcs.time",
+					"vcs.modified",
+				) {
+					fmt.Printf("  %s: %s\n", setting.Key, setting.Value)
+				}
+			}
+		}
 		os.Exit(0)
 	}
 	var flagPrintFilter string
