@@ -11,8 +11,8 @@ import (
 	"github.com/ipld/go-ipld-prime/datamodel"
 	"github.com/ipld/go-ipld-prime/fluent/qp"
 	"github.com/ipld/go-ipld-prime/schema"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
+	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
+	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
 )
 
 var (

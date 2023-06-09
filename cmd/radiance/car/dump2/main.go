@@ -20,9 +20,10 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car"
 	"github.com/klauspost/compress/zstd"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/ipld/ipldbindcode"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/iplddecoders"
-	"go.firedancer.io/radiance/pkg/blockstore"
+	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
+	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
+	solanablockrewards "github.com/rpcpool/yellowstone-faithful/solana-block-rewards"
+	solanatxmetaparsers "github.com/rpcpool/yellowstone-faithful/solana-tx-meta-parsers"
 	"k8s.io/klog/v2"
 )
 
@@ -176,7 +177,7 @@ func main() {
 					if err != nil {
 						panic(err)
 					}
-					status, err := blockstore.ParseAnyTransactionStatusMeta(uncompressedMeta)
+					status, err := solanatxmetaparsers.ParseAnyTransactionStatusMeta(uncompressedMeta)
 					if err != nil {
 						panic(err)
 					}
@@ -243,7 +244,7 @@ func main() {
 							panic(err)
 						}
 						// try decoding as protobuf
-						parsed, err := blockstore.ParseRewards(uncompressedRewards)
+						parsed, err := solanablockrewards.ParseRewards(uncompressedRewards)
 						if err != nil {
 							fmt.Println("Rewards are not protobuf: " + err.Error())
 						} else {

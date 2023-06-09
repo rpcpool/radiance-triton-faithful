@@ -24,12 +24,13 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/linxGnu/grocksdb"
 	"github.com/mattn/go-isatty"
+	solanatxmetaparsers "github.com/rpcpool/yellowstone-faithful/solana-tx-meta-parsers"
+	"github.com/rpcpool/yellowstone-faithful/third_party/solana_proto/confirmed_block"
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
-	"go.firedancer.io/radiance/third_party/solana_proto/confirmed_block"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
 )
@@ -99,7 +100,7 @@ func run(c *cobra.Command, args []string) {
 			fmt.Println(bin.FormatByteSlice(key))
 			if got[i] != nil {
 				fmt.Println("Found!")
-				meta, err := blockstore.ParseTransactionStatusMeta(got[i].Data())
+				meta, err := solanatxmetaparsers.ParseTransactionStatusMeta(got[i].Data())
 				if err != nil {
 					panic(err)
 				}
@@ -170,7 +171,7 @@ func run(c *cobra.Command, args []string) {
 						if bytes.Contains(key.Data(), targetTxSignature[:]) {
 							klog.Infof("Found target signature in key: %s ||| %s", bin.FormatByteSlice(key.Data()), bin.FormatByteSlice(targetTxSignature[:]))
 
-							status, err := blockstore.ParseTransactionStatusMeta(value.Data())
+							status, err := solanatxmetaparsers.ParseTransactionStatusMeta(value.Data())
 							if err != nil {
 								panic(err)
 							}
@@ -223,7 +224,7 @@ func run(c *cobra.Command, args []string) {
 							klog.Infof(" - %q: %q", bin.FormatByteSlice(key.Data()), bin.FormatByteSlice(value.Data()))
 							spew.Dump(key.Data(), value.Data())
 
-							status, err := blockstore.ParseTransactionStatusMeta(value.Data())
+							status, err := solanatxmetaparsers.ParseTransactionStatusMeta(value.Data())
 							if err != nil {
 								panic(err)
 							}
@@ -423,7 +424,7 @@ func run(c *cobra.Command, args []string) {
 						atomic.StoreUint64(&maxTxMetaSize, uint64(thisSize))
 						klog.Infof("new maxTxMetaSize: %s", humanize.Bytes(uint64(thisSize)))
 					}
-					txMeta, err := blockstore.ParseTransactionStatusMeta(metaBytes)
+					txMeta, err := solanatxmetaparsers.ParseTransactionStatusMeta(metaBytes)
 					if err != nil {
 						panic(err)
 					}

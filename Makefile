@@ -46,26 +46,3 @@ test-full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
 	go1.19.7 test ./... -cover -count=1
-install-protoc:
-	@echo "Installing protoc..."
-	@mkdir -p $$(pwd)/third_party/protoc
-	@echo "Getting the latest release of protoc from github.com/protocolbuffers/protobuf..."
-	@cd $$(pwd)/third_party/protoc && \
-		wget https://github.com/protocolbuffers/protobuf/releases/download/v23.1/protoc-23.1-linux-x86_64.zip
-	@echo "Unzipping protoc..."
-	@cd $$(pwd)/third_party/protoc && \
-		unzip protoc-23.1-linux-x86_64.zip
-	@echo "Installing protoc..."
-	@cd $$(pwd)/third_party/protoc && \
-		sudo cp -r bin/* /usr/local/bin/ && \
-		sudo cp -r include/* /usr/local/include/
-	@echo "Installing protoc-gen-go..."
-	@go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-	@go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-gen-proto: install-protoc
-	@echo "Generating proto files..."
-	protoc \
-		--experimental_allow_proto3_optional \
-		--go_out=paths=source_relative:$$(pwd)/third_party/solana_proto/confirmed_block \
-		-I=$$(pwd)/third_party/solana_proto/confirmed_block/ \
-		$$(pwd)/third_party/solana_proto/confirmed_block/confirmed_block.proto
