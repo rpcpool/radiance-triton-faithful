@@ -43,7 +43,33 @@ func (s intSlice) empty() bool {
 	return len(s) == 0
 }
 
+var (
+	GitCommit string
+	GitTag    string
+)
+
+func isAnyOf(s string, anyOf ...string) bool {
+	for _, v := range anyOf {
+		if s == v {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
+	// if the first argument is --version, print the version and exit:
+	if len(os.Args) > 1 && isAnyOf(os.Args[1],
+		"--version",
+		"-version",
+		"version",
+		"-v",
+	) {
+		fmt.Printf("Dump tool for Solana CAR files.\n")
+		fmt.Printf("Tag/Branch: %s\n", GitTag)
+		fmt.Printf("Commit: %s\n", GitCommit)
+		os.Exit(0)
+	}
 	var flagPrintFilter string
 	var printID bool
 	var prettyPrintTransactions bool

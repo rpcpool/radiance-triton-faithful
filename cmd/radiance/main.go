@@ -34,6 +34,7 @@ func init() {
 		&car.Cmd,
 		&gossip.Cmd,
 		&replay.Cmd,
+		&versionCmd,
 	)
 }
 
@@ -41,4 +42,17 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 	cobra.CheckErr(cmd.ExecuteContext(ctx))
+}
+
+var (
+	GitCommit string
+	GitTag    string
+)
+
+var versionCmd = cobra.Command{
+	Use:   "version",
+	Short: "Print the version number of Radiance",
+	Run: func(cmd *cobra.Command, args []string) {
+		klog.Infof("Radiance built from tag/branch %q (commit: %s)", GitTag, GitCommit)
+	},
 }
