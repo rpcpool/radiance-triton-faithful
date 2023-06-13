@@ -36,7 +36,7 @@ var Cmd = cobra.Command{
 var flags = Cmd.Flags()
 
 var (
-	flagWorkers                         = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of goroutines to verify with")
+	flagWorkers                         = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of workers to use")
 	flagOut                             = flags.StringP("out", "o", "", "Output directory")
 	flagDBs                             = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
 	flagRequireFullEpoch                = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
