@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"hash/crc64"
 	"hash/fnv"
 	"io"
 
@@ -67,7 +68,7 @@ func CreateDataFrames(
 	firstFrameSizeLimit int,
 	frameSizeLimit int,
 ) ([]*ipldbindcode.DataFrame, error) {
-	ha := hashBytes(data)
+	ha := checksumCrc64(data)
 
 	rawFrames, err := CreateRawDataFrames(data, firstFrameSizeLimit, frameSizeLimit)
 	if err != nil {
@@ -91,10 +92,18 @@ func CreateDataFrames(
 	return frames, nil
 }
 
-func hashBytes(data []byte) uint64 {
+// checksumFnv is the legacy checksum function, used in the first version of the radiance
+// car creator. Some old cars still use this function.
+func checksumFnv(data []byte) uint64 {
 	h := fnv.New64a()
 	h.Write(data)
 	return h.Sum64()
+}
+
+// checksumCrc64 returns the hash of the provided buffer.
+// It is used in the latest version of the radiance car creator.
+func checksumCrc64(buf []byte) uint64 {
+	return crc64.Checksum(buf, crc64.MakeTable(crc64.ISO))
 }
 
 func CreateAndStoreFrames(
