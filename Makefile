@@ -35,11 +35,6 @@ full: install_compatible_golang_version build_rocksdb
 		-ldflags="-X main.GitCommit=$$(git rev-parse HEAD) -X main.GitTag=$$(git symbolic-ref -q --short HEAD || git describe --tags --exact-match)" \
 		./cmd/radiance
 
-	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
-	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
-	go1.20.5 build \
-		-ldflags="-X main.GitCommit=$$(git rev-parse HEAD) -X main.GitTag=$$(git symbolic-ref -q --short HEAD || git describe --tags --exact-match)" \
-		./cmd/radiance/car/dump2
 radiance: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
