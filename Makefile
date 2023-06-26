@@ -1,4 +1,4 @@
-DEFAULT:lite
+DEFAULT:full
 
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
@@ -9,7 +9,7 @@ install_compatible_golang_version:
 	go1.19.7 download
 build_rocksdb: install-deps
 	mkdir -p facebook ; cd facebook ; \
-	git clone https://github.com/facebook/rocksdb --branch v7.10.2 --depth 1 ; \
+	git clone https://github.com/facebook/rocksdb --branch v8.3.2 --depth 1 ; \
 	cd ./rocksdb ; \
 	mkdir -p build && cd build ; \
 	cmake .. \
@@ -28,8 +28,6 @@ build_rocksdb: install-deps
 		-DWITH_TOOLS=OFF \
 		-DWITH_TRACE_TOOLS=OFF ; \
 	make -j
-lite: install_compatible_golang_version
-	go1.19.7 build -tags=lite ./cmd/radiance
 full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
