@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/dustin/go-humanize"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -158,6 +157,7 @@ type Multistage struct {
 	numReceivedAtomic   *atomic.Int64
 	numTxAtomic         *atomic.Uint64
 	walker              *radianceblockstore.BlockWalk
+	numWrittenObjects   *atomic.Uint64
 }
 
 // - [x] in stage 1, we create a CAR file for all the slots
@@ -178,6 +178,7 @@ func NewMultistage(
 		walker:            walker,
 		numReceivedAtomic: new(atomic.Int64),
 		numTxAtomic:       new(atomic.Uint64),
+		numWrittenObjects: new(atomic.Uint64),
 	}
 
 	cw.walker.SetOnBeforePop(func() error {
@@ -244,7 +245,7 @@ func NewMultistage(
 		}
 
 		writableCar := new(carHandle)
-		err = writableCar.open(finalCARFilepath)
+		err = writableCar.open(finalCARFilepath, cw.numWrittenObjects)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create writable CAR: %w", err)
 		}
@@ -604,11 +605,18 @@ func CompressZstd(src []byte) []byte {
 	return encoder.EncodeAll(src, make([]byte, 0, len(src)))
 }
 
+type MultistageRecap struct {
+	TotalSlots             uint64
+	FirstSlot              uint64
+	LastSlot               uint64
+	NumberOfWrittenObjects uint64
+}
+
 // FinalizeDAG constructs the DAG for the given epoch and replaces the root of
 // the CAR file with the root of the DAG (the Epoch object CID).
 func (cw *Multistage) FinalizeDAG(
 	epoch uint64,
-) (datamodel.Link, error) {
+) (datamodel.Link, *MultistageRecap, error) {
 	{
 		// wait for all slots to be registered
 		klog.Infof("Waiting for all slots to be registered...")
@@ -622,7 +630,7 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	allRegistered, err := cw.reg.GetAll()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get all links: %w", err)
+		return nil, nil, fmt.Errorf("failed to get all links: %w", err)
 	}
 	allSlots := make([]uint64, 0, len(allRegistered))
 	for _, slot := range allRegistered {
@@ -641,38 +649,47 @@ func (cw *Multistage) FinalizeDAG(
 	klog.Infof("Completing DAG for epoch %d...", epoch)
 	epochRootLink, err := cw.constructEpoch(epoch, schedule)
 	if err != nil {
-		return nil, fmt.Errorf("failed to construct epoch: %w", err)
+		return nil, nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
 	klog.Infof("Completed DAG for epoch %d", epoch)
+
+	slotRecap := &MultistageRecap{
+		TotalSlots:             uint64(len(allSlots)),
+		FirstSlot:              allSlots[0],
+		LastSlot:               allSlots[len(allSlots)-1],
+		NumberOfWrittenObjects: cw.NumberOfWrittenObjects(),
+	}
 
 	klog.Infof("Closing CAR...")
 	err = cw.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to close file: %w", err)
+		return nil, nil, fmt.Errorf("failed to close file: %w", err)
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
 	klog.Infof("CAR contains %d transactions", cw.numTxAtomic.Load())
-
-	carFileSize, err := fileSize(cw.carFilepath)
-	if err != nil {
-		klog.Warningf("Failed to get CAR file size: %s", err)
-	} else {
-		klog.Infof("CAR file size: %s", humanize.Bytes(carFileSize))
-	}
+	klog.Infof("CAR contains %d objects", cw.NumberOfWrittenObjects())
 
 	{
 		epochCid := epochRootLink.(cidlink.Link).Cid
 		klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
 		err = cw.replaceRoot(epochCid)
 		if err != nil {
-			return nil, fmt.Errorf("failed to replace roots in file: %w", err)
+			return nil, nil, fmt.Errorf("failed to replace roots in file: %w", err)
 		}
 		klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
 	}
 
 	cw.reg.Destroy()
-	return epochRootLink, nil
+	return epochRootLink, slotRecap, err
+}
+
+func (cw *Multistage) NumberOfTransactions() uint64 {
+	return cw.numTxAtomic.Load()
+}
+
+func (cw *Multistage) NumberOfWrittenObjects() uint64 {
+	return cw.numWrittenObjects.Load()
 }
 
 func (cw *Multistage) constructEpoch(

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"k8s.io/klog/v2"
@@ -12,18 +13,19 @@ import (
 
 // copied from pkg/ipld/cargen/cargen.go
 type carHandle struct {
-	file       *os.File
-	cache      *bufio.Writer
-	writer     *car.Writer
-	lastOffset int64
-	mu         *sync.Mutex
+	file              *os.File
+	cache             *bufio.Writer
+	writer            *car.Writer
+	lastOffset        int64
+	mu                *sync.Mutex
+	numWrittenObjects *atomic.Uint64
 }
 
 const (
 	writeBufSize = MiB * 1
 )
 
-func (c *carHandle) open(finalCARFilepath string) error {
+func (c *carHandle) open(finalCARFilepath string, numObj *atomic.Uint64) error {
 	if c.ok() {
 		return fmt.Errorf("handle not closed")
 	}
@@ -37,11 +39,12 @@ func (c *carHandle) open(finalCARFilepath string) error {
 		return fmt.Errorf("failed to start CAR at %s: %w", finalCARFilepath, err)
 	}
 	*c = carHandle{
-		file:       file,
-		cache:      cache,
-		writer:     writer,
-		lastOffset: 0,
-		mu:         &sync.Mutex{},
+		file:              file,
+		cache:             cache,
+		writer:            writer,
+		lastOffset:        0,
+		mu:                &sync.Mutex{},
+		numWrittenObjects: numObj,
 	}
 	klog.Infof("Created new CAR file %s", file.Name())
 	return nil
@@ -74,5 +77,10 @@ func (c *carHandle) WriteBlock(block car.Block) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	c.numWrittenObjects.Add(1)
 	return c.writer.WriteBlock(block)
+}
+
+func (c *carHandle) NumberOfWrittenObjects() uint64 {
+	return c.numWrittenObjects.Load()
 }

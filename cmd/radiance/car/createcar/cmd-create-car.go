@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -20,6 +21,8 @@ import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
+	"go.firedancer.io/radiance/pkg/versioninfo"
+	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
 )
 
@@ -57,16 +60,17 @@ func init() {
 	spew.Config.MaxDepth = 5
 }
 
-func run(c *cobra.Command, args []string) {
-	{
-		// try using the hardware-accelerated SHA256 implementation.
-		// if it fails, better to fail early than to fail after processing.
-		h := sha256.New()
-		h.Write([]byte("test"))
-		if hex.EncodeToString(h.Sum(nil)) != "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" {
-			klog.Exitf("SHA256 hardware-acceleration is not working")
-		}
+func init() {
+	// try using the hardware-accelerated SHA256 implementation.
+	// if it fails, better to fail early than to fail after processing.
+	h := sha256.New()
+	h.Write([]byte("test"))
+	if hex.EncodeToString(h.Sum(nil)) != "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" {
+		klog.Exitf("SHA256 hardware-acceleration is not working")
 	}
+}
+
+func run(c *cobra.Command, args []string) {
 	start := time.Now()
 
 	defer func() {
@@ -193,12 +197,54 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("FATAL: %s", err)
 	}
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
-	epochCID, err := multi.FinalizeDAG(epoch)
+	epochCID, slotRecap, err := multi.FinalizeDAG(epoch)
 	if err != nil {
 		panic(err)
 	}
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
-	klog.Infof("Done. Completed CAR file generation in %s", time.Since(start))
+	tookCarCreation := time.Since(start)
+	klog.Infof("Done. Completed CAR file generation in %s", tookCarCreation)
+	type Recap struct {
+		Epoch                 uint64                 `yaml:"epoch"`
+		EpochCID              string                 `yaml:"epoch_cid"`
+		NumTransactions       uint64                 `yaml:"num_transactions"`
+		CarFileSha256         string                 `yaml:"car_file_sha256"`
+		CarFileSizeBytes      uint64                 `yaml:"car_file_size_bytes"`
+		CarNumObjects         uint64                 `yaml:"car_num_objects"`
+		NumSlots              uint64                 `yaml:"num_slots"`
+		FirstSlot             uint64                 `yaml:"first_slot"`
+		LastSlot              uint64                 `yaml:"last_slot"`
+		TookCarCreation       time.Duration          `yaml:"took_car_creation"`
+		TookTotal             time.Duration          `yaml:"took_total"`
+		NumBytesReadFromDisk  uint64                 `yaml:"num_bytes_read_from_disk"`
+		NumBytesWrittenToDisk uint64                 `yaml:"num_bytes_written_to_disk"`
+		VersionInfo           map[string]interface{} `yaml:"version_info"`
+		Cmd                   string                 `yaml:"cmd"`
+	}
+
+	thisCarRecap := Recap{
+		Epoch:           epoch,
+		EpochCID:        epochCID.String(),
+		NumTransactions: multi.NumberOfTransactions(),
+		CarNumObjects:   multi.NumberOfWrittenObjects(),
+		NumSlots:        slotRecap.TotalSlots,
+		FirstSlot:       slotRecap.FirstSlot,
+		LastSlot:        slotRecap.LastSlot,
+		TookCarCreation: tookCarCreation,
+	}
+	{
+		versionInfo, ok := versioninfo.GetBuildSettings()
+		if ok {
+			thisCarRecap.VersionInfo = make(map[string]interface{})
+			for _, setting := range versionInfo {
+				thisCarRecap.VersionInfo[setting.Key] = setting.Value
+			}
+		}
+	}
+	{
+		// save the command used to generate this CAR file
+		thisCarRecap.Cmd = strings.Join(os.Args, " ")
+	}
 
 	{
 		epochCidString := epochCID.(cidlink.Link).Cid.String()
@@ -213,7 +259,7 @@ func run(c *cobra.Command, args []string) {
 	{
 		klog.Info("---")
 		// print the size of each DB directory
-		var totalSize uint64
+		var totalDBsSize uint64
 		hadError := false
 		for _, dbPath := range dbPaths {
 			dbPath = filepath.Clean(dbPath)
@@ -223,13 +269,13 @@ func run(c *cobra.Command, args []string) {
 				klog.Errorf("Failed to get size of DB %s: %s", dbPath, err)
 				continue
 			}
-			totalSize += dbSize
+			totalDBsSize += dbSize
 			klog.Infof("- DB %s size: %s", dbPath, humanize.Bytes(uint64(dbSize)))
 		}
 		if hadError {
 			klog.Warning("Failed to get size of one or more DBs")
 		}
-		klog.Infof("Total DBs size: %s", humanize.Bytes(totalSize))
+		klog.Infof("Total DBs size: %s", humanize.Bytes(totalDBsSize))
 	}
 
 	{
@@ -239,6 +285,7 @@ func run(c *cobra.Command, args []string) {
 		if err != nil {
 			panic(err)
 		}
+		thisCarRecap.NumBytesReadFromDisk = numBytesReadFromDisk
 		klog.Infof(
 			"This process read %d bytes (%s) from disk (%v/s)",
 			numBytesReadFromDisk,
@@ -249,6 +296,7 @@ func run(c *cobra.Command, args []string) {
 		if err != nil {
 			panic(err)
 		}
+		thisCarRecap.NumBytesWrittenToDisk = numBytesWrittenToDisk
 		klog.Infof(
 			"This process wrote %d bytes (%s) to disk (%v/s)",
 			numBytesWrittenToDisk,
@@ -267,8 +315,35 @@ func run(c *cobra.Command, args []string) {
 		} else {
 			klog.Infof("CAR file SHA256 hash: %s (took %s)", gotHash, time.Since(hashStartedAt))
 		}
+		thisCarRecap.CarFileSha256 = gotHash
 	} else {
 		klog.Info("Skipping hashing the CAR file")
+	}
+	{
+		carFileSize, err := fileSize(finalCARFilepath)
+		if err != nil {
+			klog.Warningf("Failed to get CAR file size: %s", err)
+		} else {
+			klog.Infof("CAR file size: %s", humanize.Bytes(carFileSize))
+		}
+		thisCarRecap.CarFileSizeBytes = carFileSize
+	}
+	thisCarRecap.TookTotal = time.Since(start)
+
+	{
+		// save the recap to a file, in the format {epoch}.recap.yaml
+		recapFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.recap.yaml", epoch))
+		klog.Infof("Saving recap to file: %s", recapFilepath)
+		recapFile, err := os.Create(recapFilepath)
+		if err != nil {
+			klog.Errorf("Failed to create recap file: %s", err)
+		} else {
+			defer recapFile.Close()
+			err = yaml.NewEncoder(recapFile).Encode(thisCarRecap)
+			if err != nil {
+				klog.Errorf("Failed to write recap file: %s", err)
+			}
+		}
 	}
 
 	timeTaken := time.Since(start)

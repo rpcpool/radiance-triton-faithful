@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime/debug"
 
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/cmd/radiance/blockstore"
 	"go.firedancer.io/radiance/cmd/radiance/car"
 	"go.firedancer.io/radiance/cmd/radiance/gossip"
 	"go.firedancer.io/radiance/cmd/radiance/replay"
+	"go.firedancer.io/radiance/pkg/versioninfo"
 	"k8s.io/klog/v2"
 
 	// Load in instruction pretty-printing
@@ -67,21 +67,11 @@ var versionCmd = cobra.Command{
 		fmt.Printf("Radiance.\n")
 		fmt.Printf("Tag/Branch: %s\n", GitTag)
 		fmt.Printf("Commit: %s\n", GitCommit)
-		if info, ok := debug.ReadBuildInfo(); ok {
+
+		if info, ok := versioninfo.GetBuildSettings(); ok {
 			fmt.Printf("More info:\n")
-			for _, setting := range info.Settings {
-				if isAnyOf(setting.Key,
-					"-compiler",
-					"GOARCH",
-					"GOOS",
-					"GOAMD64",
-					"vcs",
-					"vcs.revision",
-					"vcs.time",
-					"vcs.modified",
-				) {
-					fmt.Printf("  %s: %s\n", setting.Key, setting.Value)
-				}
+			for _, setting := range info {
+				fmt.Printf("  %s: %s\n", setting.Key, setting.Value)
 			}
 		}
 	},
