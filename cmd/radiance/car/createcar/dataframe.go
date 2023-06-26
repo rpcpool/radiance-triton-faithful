@@ -77,19 +77,39 @@ func CreateDataFrames(
 
 	total := len(rawFrames)
 
+	if total == 1 {
+		bl := &ipldbindcode.DataFrame{
+			Kind:  int(iplddecoders.KindDataFrame),
+			Hash:  nil,
+			Index: nil,
+			Total: nil,
+			Next:  nil,
+			Data:  rawFrames[0],
+		}
+		return []*ipldbindcode.DataFrame{bl}, nil
+	}
+
 	frames := make([]*ipldbindcode.DataFrame, 0, len(rawFrames))
 	for i, rawFrame := range rawFrames {
 		bl := &ipldbindcode.DataFrame{
 			Kind:  int(iplddecoders.KindDataFrame),
-			Hash:  int(ha),
-			Index: i,
-			Total: total,
+			Hash:  douplePointerInt(int(ha)),
+			Index: douplePointerInt(i),
+			Total: douplePointerInt(total),
 			Data:  rawFrame,
 		}
 		frames = append(frames, bl)
 	}
 
 	return frames, nil
+}
+
+func douplePointerInt(i int) **int {
+	return pointerToPointerInt(&i)
+}
+
+func pointerToPointerInt(i *int) **int {
+	return &i
 }
 
 // checksumFnv is the legacy checksum function, used in the first version of the radiance
@@ -134,7 +154,7 @@ func CreateAndStoreFrames(
 		links := make([]datamodel.Link, len(chunk))
 		for j, frame := range chunk {
 			reverseLinkSlice(previousLinks)
-			frame.Next = previousLinks
+			frame.Next = douplePointerLinkSlice(previousLinks)
 			dataFrameNode, err := frameToDatamodelNode(frame)
 			if err != nil {
 				return nil, fmt.Errorf("failed to build dataFrame node: %w", err)
@@ -152,9 +172,17 @@ func CreateAndStoreFrames(
 	}
 
 	reverseLinkSlice(previousLinks)
-	first.Next = previousLinks
+	first.Next = douplePointerLinkSlice(previousLinks)
 
 	return first, nil
+}
+
+func douplePointerLinkSlice(l ipldbindcode.List__Link) **ipldbindcode.List__Link {
+	return pointerToPointerLinkSlice(&l)
+}
+
+func pointerToPointerLinkSlice(l *ipldbindcode.List__Link) **ipldbindcode.List__Link {
+	return &l
 }
 
 func frameToDatamodelNode(
@@ -168,19 +196,29 @@ func frameToDatamodelNodeAssembler(
 ) func(datamodel.MapAssembler) {
 	return func(ma datamodel.MapAssembler) {
 		qp.MapEntry(ma, "kind", qp.Int(int64(iplddecoders.KindDataFrame)))
-		qp.MapEntry(ma, "hash", qp.Int(int64(frame.Hash)))
-		qp.MapEntry(ma, "index", qp.Int(int64(frame.Index)))
-		qp.MapEntry(ma, "total", qp.Int(int64(frame.Total)))
+		if v, ok := frame.GetHash(); ok {
+			qp.MapEntry(ma, "hash", qp.Int(int64(v)))
+		}
+		if v, ok := frame.GetIndex(); ok {
+			qp.MapEntry(ma, "index", qp.Int(int64(v)))
+		}
+		if v, ok := frame.GetTotal(); ok {
+			qp.MapEntry(ma, "total", qp.Int(int64(v)))
+		}
+
 		qp.MapEntry(ma, "data", qp.Bytes(frame.Data))
-		qp.MapEntry(ma, "next",
-			qp.List(-1, func(la datamodel.ListAssembler) {
-				for _, link := range frame.Next {
-					qp.ListEntry(la,
-						qp.Link(link),
-					)
-				}
-			}),
-		)
+
+		if v, ok := frame.GetNext(); ok {
+			qp.MapEntry(ma, "next",
+				qp.List(-1, func(la datamodel.ListAssembler) {
+					for _, link := range v {
+						qp.ListEntry(la,
+							qp.Link(link),
+						)
+					}
+				}),
+			)
+		}
 	}
 }
 

@@ -20,7 +20,6 @@ import (
 	"github.com/dustin/go-humanize"
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
-	"github.com/golang/protobuf/proto"
 	"github.com/klauspost/compress/zstd"
 	"github.com/linxGnu/grocksdb"
 	"github.com/mattn/go-isatty"
@@ -32,6 +31,7 @@ import (
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
