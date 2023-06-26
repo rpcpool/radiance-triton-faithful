@@ -27,7 +27,7 @@ require (
 	github.com/ipld/go-car v0.6.0
 	github.com/ipld/go-car/v2 v2.10.0
 	github.com/ipld/go-ipld-prime v0.20.1-0.20230329011551-5056175565b0
-	github.com/klauspost/compress v1.16.4
+	github.com/klauspost/compress v1.16.6
 	github.com/linxGnu/grocksdb v1.8.0
 	github.com/lucas-clemente/quic-go v0.29.1
 	github.com/mattn/go-isatty v0.0.18
