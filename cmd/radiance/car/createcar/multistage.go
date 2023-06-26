@@ -28,7 +28,6 @@ import (
 	"go.firedancer.io/radiance/pkg/blockstore"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
-	"go.firedancer.io/radiance/pkg/ipld/ipldgen"
 	"go.firedancer.io/radiance/pkg/shred"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -425,6 +424,14 @@ func constructBlock(
 	return blockLink, nil
 }
 
+type EntryPos struct {
+	Slot       uint64
+	EntryIndex int
+	Batch      int
+	BatchIndex int
+	LastShred  int
+}
+
 func buildShredding(
 	slotMeta *radianceblockstore.SlotMeta,
 	entries [][]shred.Entry,
@@ -435,7 +442,7 @@ func buildShredding(
 	for i, batch := range entries {
 		for j, entry := range batch {
 
-			pos := ipldgen.EntryPos{
+			pos := EntryPos{
 				Slot:       slotMeta.Slot,
 				EntryIndex: entryNum,
 				Batch:      i,

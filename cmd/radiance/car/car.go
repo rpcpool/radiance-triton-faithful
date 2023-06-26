@@ -5,7 +5,6 @@ package car
 import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/cmd/radiance/car/createcar"
-	"go.firedancer.io/radiance/cmd/radiance/car/dump"
 )
 
 var Cmd = cobra.Command{
@@ -16,7 +15,6 @@ var Cmd = cobra.Command{
 
 func init() {
 	Cmd.AddCommand(
-		&dump.Cmd,
 		&createcar.Cmd,
 	)
 }

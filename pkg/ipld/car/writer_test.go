@@ -18,7 +18,7 @@ import (
 
 func TestNewWriter(t *testing.T) {
 	var buf bytes.Buffer
-	w, err := NewWriter(&buf)
+	w, err := NewWriter(&buf, CBOR_SHA256_DUMMY_CID)
 	require.NoError(t, err)
 	require.NotNil(t, w)
 
@@ -51,14 +51,14 @@ func TestNewWriter_Error(t *testing.T) {
 	var mock mockWriter
 	mock.err = io.ErrClosedPipe
 
-	w, err := NewWriter(&mock)
+	w, err := NewWriter(&mock, CBOR_SHA256_DUMMY_CID)
 	assert.Nil(t, w)
 	assert.Same(t, mock.err, err)
 }
 
 func TestWriter(t *testing.T) {
 	var buf bytes.Buffer
-	w, err := NewWriter(&buf)
+	w, err := NewWriter(&buf, CBOR_SHA256_DUMMY_CID)
 	require.NoError(t, err)
 	require.NotNil(t, w)
 

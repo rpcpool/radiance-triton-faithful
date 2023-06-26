@@ -24,12 +24,13 @@ import (
 )
 
 var Cmd = cobra.Command{
-	Use:   "create2 <epoch>",
-	Short: "Create CAR file from blockstore",
+	Use:     "create2 <epoch>",
+	Aliases: []string{"create"},
+	Short:   "Create CAR file from blockstore",
 	Long: "Extracts Solana ledger data from blockstore (RocksDB) databases,\n" +
 		"and outputs one IPLD CAR (content-addressable archives).\n" +
 		"\n" +
-		"The DAG contained in the CAR is deterministic.",
+		"The DAG contained in the CAR is deterministic, as is the generated CAR file.",
 	Args: cobra.ExactArgs(1),
 }
 
