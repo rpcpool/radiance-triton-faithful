@@ -483,7 +483,6 @@ func onEntry(
 	for _, batch := range entries {
 		for _, entry := range batch {
 
-			// TODO: is this correct?
 			transactionMetas := metas[txNum : txNum+len(entry.Txns)]
 
 			// - construct a Entry object
@@ -505,6 +504,7 @@ func onEntry(
 									qp.Link(cidOfATx),
 								)
 							},
+							txNum,
 						)
 					}),
 				)
@@ -536,15 +536,16 @@ func onTx(
 	entry shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	callback func(cidOfATx datamodel.Link),
+	numTxBeforeThisEntry int,
 ) error {
-	for txIndex, transaction := range entry.Txns {
+	for txIndexEntry, transaction := range entry.Txns {
 		firstSig := transaction.Signatures[0]
 
 		txData, err := transaction.MarshalBinary()
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction %s: %w", firstSig, err)
 		}
-		meta := metas[txIndex]
+		meta := metas[txIndexEntry]
 		txMeta := meta.Raw
 
 		// if true && !gotOneRandomBigTx {
@@ -579,6 +580,7 @@ func onTx(
 			qp.MapEntry(ma, "data", qp.Map(-1, frameToDatamodelNodeAssembler(txDataFirstFrame)))
 			qp.MapEntry(ma, "metadata", qp.Map(-1, frameToDatamodelNodeAssembler(txMetaFirstFrame)))
 			qp.MapEntry(ma, "slot", qp.Int(int64(slotMeta.Slot)))
+			qp.MapEntry(ma, "index", qp.Int(int64(numTxBeforeThisEntry+txIndexEntry)))
 		})
 		if err != nil {
 			return fmt.Errorf("failed to construct Transaction %s: %w", firstSig, err)
