@@ -144,7 +144,7 @@ func main() {
 				panic(err)
 			}
 			doPrint := filter.has(int(iplddecoders.KindTransaction)) || filter.empty()
-			if decoded.Data.Total == 1 {
+			if total, ok := decoded.Data.GetTotal(); !ok || total == 1 {
 				completeData := decoded.Data.Data
 				var tx solana.Transaction
 				if err := bin.UnmarshalBin(&tx, completeData); err != nil {
@@ -165,7 +165,7 @@ func main() {
 					fmt.Println("transaction data is split into multiple blocks; skipping printing")
 				}
 			}
-			if decoded.Metadata.Total == 1 {
+			if total, ok := decoded.Metadata.GetTotal(); !ok || total == 1 {
 				completeBuffer := decoded.Metadata.Data
 				if len(completeBuffer) > 0 {
 					uncompressedMeta, err := decompressZstd(completeBuffer)
@@ -231,12 +231,17 @@ func main() {
 				spew.Dump(decoded)
 				numNodesPrinted++
 
-				hashToFrames[decoded.Data.Hash] = append(hashToFrames[decoded.Data.Hash], CidToDataFrame{
+				hash, ok := decoded.Data.GetHash()
+				if !ok {
+					klog.Info("rewards data has no hash; skipping printing")
+					continue
+				}
+				hashToFrames[hash] = append(hashToFrames[hash], CidToDataFrame{
 					Cid:       cid.Undef,
 					DataFrame: decoded.Data,
 				})
 
-				if decoded.Data.Total == 1 {
+				if total, ok := decoded.Data.GetTotal(); !ok || total == 1 {
 					completeBuffer := decoded.Data.Data
 					if len(completeBuffer) > 0 {
 						uncompressedRewards, err := decompressZstd(completeBuffer)
@@ -262,7 +267,12 @@ func main() {
 			}
 			// spew.Dump(decoded)
 
-			hashToFrames[decoded.Hash] = append(hashToFrames[decoded.Hash], CidToDataFrame{
+			hash, ok := decoded.GetHash()
+			if !ok {
+				klog.Infof("DataFrame %s has no hash; skipping", block.Cid())
+				continue
+			}
+			hashToFrames[hash] = append(hashToFrames[hash], CidToDataFrame{
 				Cid:       block.Cid(),
 				DataFrame: *decoded,
 			})
@@ -278,7 +288,15 @@ func main() {
 		for hash, frames := range hashToFrames {
 			// sort by index
 			sort.Slice(frames, func(i, j int) bool {
-				return frames[i].DataFrame.Index < frames[j].DataFrame.Index
+				indexI, ok := frames[i].DataFrame.GetIndex()
+				if !ok {
+					panic("data frame has no index")
+				}
+				indexJ, ok := frames[j].DataFrame.GetIndex()
+				if !ok {
+					panic("data frame has no index")
+				}
+				return indexI < indexJ
 			})
 			{
 				for _, frame := range frames {
@@ -310,7 +328,11 @@ func main() {
 			}
 			wantedOrderOfCids := make([]cid.Cid, 0, len(frames))
 			for _, frame := range frames {
-				for _, nextCid := range frame.DataFrame.Next {
+				next, ok := frame.DataFrame.GetNext()
+				if !ok {
+					continue
+				}
+				for _, nextCid := range next {
 					wantedOrderOfCids = append(wantedOrderOfCids, nextCid.(cidlink.Link).Cid)
 				}
 			}
