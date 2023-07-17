@@ -87,15 +87,40 @@ func cloneBytes(b []byte) []byte {
 	return c
 }
 
-func (d *DB) GetBlockTime(key []byte) (uint64, error) {
+func encodeSlotAsKey(slot uint64) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key[0:8], slot)
+	return key
+}
+
+func (d *DB) GetBlockTime(slot uint64) (uint64, error) {
 	if d.CfBlockTime == nil {
 		return 0, nil
 	}
+	key := encodeSlotAsKey(slot)
 	opts := getReadOptions()
 	defer putReadOptions(opts)
 	got, err := d.DB.GetCF(opts, d.CfBlockTime, key)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get blockTime: %w", err)
+	}
+	defer got.Free()
+	if got == nil || got.Size() == 0 {
+		return 0, nil
+	}
+	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
+}
+
+func (d *DB) GetBlockHeight(slot uint64) (uint64, error) {
+	if d.CfBlockHeight == nil {
+		return 0, nil
+	}
+	key := encodeSlotAsKey(slot)
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+	got, err := d.DB.GetCF(opts, d.CfBlockHeight, key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get blockHeight: %w", err)
 	}
 	defer got.Free()
 	if got == nil || got.Size() == 0 {

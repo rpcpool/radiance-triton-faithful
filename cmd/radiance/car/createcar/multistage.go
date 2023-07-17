@@ -82,9 +82,14 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
-	blockTime, err := w.walker.BlockTime(BlocktimeKey(slot))
+	blockTime, err := w.walker.BlockTime(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
+	}
+
+	blockHeight, err := w.walker.BlockHeight(slot)
+	if err != nil {
+		return fmt.Errorf("failed to get block height for slot %d: %w", slot, err)
 	}
 
 	rewards, err := w.walker.Rewards(slot)
@@ -102,6 +107,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		subgraphStore,
 		w.slotMeta,
 		blockTime,
+		blockHeight,
 		entries,
 		metas,
 		rewards,
@@ -325,6 +331,7 @@ func constructBlock(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
 	blockTime uint64,
+	blockHeight uint64,
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	rewardsBlob []byte,
@@ -406,6 +413,7 @@ func constructBlock(
 			qp.Map(-1, func(ma datamodel.MapAssembler) {
 				qp.MapEntry(ma, "parent_slot", qp.Int(int64(slotMeta.ParentSlot)))
 				qp.MapEntry(ma, "blocktime", qp.Int(int64(blockTime)))
+				qp.MapEntry(ma, "block_height", qp.Int(int64(blockHeight)))
 			}),
 		)
 		qp.MapEntry(ma, "rewards", qp.Link(rewardsNodeLink))
