@@ -331,7 +331,7 @@ func constructBlock(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
 	blockTime uint64,
-	blockHeight uint64,
+	blockHeight *uint64,
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	rewardsBlob []byte,
@@ -413,7 +413,11 @@ func constructBlock(
 			qp.Map(-1, func(ma datamodel.MapAssembler) {
 				qp.MapEntry(ma, "parent_slot", qp.Int(int64(slotMeta.ParentSlot)))
 				qp.MapEntry(ma, "blocktime", qp.Int(int64(blockTime)))
-				qp.MapEntry(ma, "block_height", qp.Int(int64(blockHeight)))
+				if blockHeight == nil {
+					qp.MapEntry(ma, "block_height", qp.Null())
+				} else {
+					qp.MapEntry(ma, "block_height", qp.Int(int64(*blockHeight)))
+				}
 			}),
 		)
 		qp.MapEntry(ma, "rewards", qp.Link(rewardsNodeLink))

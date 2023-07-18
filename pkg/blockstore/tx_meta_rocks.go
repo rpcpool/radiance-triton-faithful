@@ -111,22 +111,23 @@ func (d *DB) GetBlockTime(slot uint64) (uint64, error) {
 	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
 }
 
-func (d *DB) GetBlockHeight(slot uint64) (uint64, error) {
+func (d *DB) GetBlockHeight(slot uint64) (*uint64, error) {
 	if d.CfBlockHeight == nil {
-		return 0, nil
+		return nil, nil
 	}
 	key := encodeSlotAsKey(slot)
 	opts := getReadOptions()
 	defer putReadOptions(opts)
 	got, err := d.DB.GetCF(opts, d.CfBlockHeight, key)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get blockHeight: %w", err)
+		return nil, fmt.Errorf("failed to get blockHeight: %w", err)
 	}
 	defer got.Free()
 	if got == nil || got.Size() == 0 {
-		return 0, nil
+		return nil, nil
 	}
-	return binary.LittleEndian.Uint64(got.Data()[:8]), nil
+	value := binary.LittleEndian.Uint64(got.Data()[:8])
+	return &value, nil
 }
 
 func (d *DB) GetRewards(slot uint64) ([]byte, error) {

@@ -191,7 +191,7 @@ func (m *BlockWalk) BlockTime(slot uint64) (uint64, error) {
 	return h.DB.GetBlockTime(slot)
 }
 
-func (m *BlockWalk) BlockHeight(slot uint64) (uint64, error) {
+func (m *BlockWalk) BlockHeight(slot uint64) (*uint64, error) {
 	h := m.handles[0]
 	return h.DB.GetBlockHeight(slot)
 }
