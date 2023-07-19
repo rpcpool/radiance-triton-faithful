@@ -186,9 +186,14 @@ func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWi
 	return h.DB.GetTransactionMetas(keys...)
 }
 
-func (m *BlockWalk) BlockTime(key []byte) (uint64, error) {
+func (m *BlockWalk) BlockTime(slot uint64) (uint64, error) {
 	h := m.handles[0]
-	return h.DB.GetBlockTime(key)
+	return h.DB.GetBlockTime(slot)
+}
+
+func (m *BlockWalk) BlockHeight(slot uint64) (*uint64, error) {
+	h := m.handles[0]
+	return h.DB.GetBlockHeight(slot)
 }
 
 func (m *BlockWalk) Rewards(slot uint64) ([]byte, error) {

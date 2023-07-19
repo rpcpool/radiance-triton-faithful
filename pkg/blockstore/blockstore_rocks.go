@@ -15,14 +15,15 @@ import (
 type DB struct {
 	DB *grocksdb.DB
 
-	CfDefault   *grocksdb.ColumnFamilyHandle
-	CfMeta      *grocksdb.ColumnFamilyHandle
-	CfRoot      *grocksdb.ColumnFamilyHandle
-	CfDataShred *grocksdb.ColumnFamilyHandle
-	CfCodeShred *grocksdb.ColumnFamilyHandle
-	CfTxStatus  *grocksdb.ColumnFamilyHandle
-	CfBlockTime *grocksdb.ColumnFamilyHandle
-	CfRewards   *grocksdb.ColumnFamilyHandle
+	CfDefault     *grocksdb.ColumnFamilyHandle
+	CfMeta        *grocksdb.ColumnFamilyHandle
+	CfRoot        *grocksdb.ColumnFamilyHandle
+	CfDataShred   *grocksdb.ColumnFamilyHandle
+	CfCodeShred   *grocksdb.ColumnFamilyHandle
+	CfTxStatus    *grocksdb.ColumnFamilyHandle
+	CfBlockTime   *grocksdb.ColumnFamilyHandle
+	CfBlockHeight *grocksdb.ColumnFamilyHandle
+	CfRewards     *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -146,6 +147,10 @@ func open(path string, secondaryPath string) (*DB, error) {
 	// if db.CfRewards == nil {
 	// 	return nil, errors.New("missing column family " + CfRewards)
 	// }
+	// CfBlockHeight is optional
+	// if db.CfBlockHeight == nil {
+	// 	return nil, errors.New("missing column family " + CfBlockHeight)
+	// }
 
 	return db, nil
 }
@@ -168,6 +173,8 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfBlockTime, grocksdb.NewDefaultOptions()
 	case CfRewards:
 		return &db.CfRewards, grocksdb.NewDefaultOptions()
+	case CfBlockHeight:
+		return &db.CfBlockHeight, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}
