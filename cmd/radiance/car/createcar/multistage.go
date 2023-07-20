@@ -101,7 +101,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	// }
 
 	// subgraphStore will contain the subgraph for the block
-	subgraphStore := newMemoryBlockstore(w.slotMeta.Slot)
+	subgraphStore := newMemoryBlockstore(w.slotMeta.Slot, w.slotMeta.ParentSlot)
 	// - [x] construct the block
 	blockRootLink, err := constructBlock(
 		subgraphStore,
@@ -125,14 +125,16 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 }
 
 type memSubtreeStore struct {
-	slot   uint64
-	blocks []firecar.Block
+	slot       uint64
+	parentSlot uint64
+	blocks     []firecar.Block
 }
 
-func newMemoryBlockstore(slot uint64) *memSubtreeStore {
+func newMemoryBlockstore(slot uint64, parentSlot uint64) *memSubtreeStore {
 	return &memSubtreeStore{
-		slot:   slot,
-		blocks: make([]firecar.Block, 0),
+		slot:       slot,
+		parentSlot: parentSlot,
+		blocks:     make([]firecar.Block, 0),
 	}
 }
 
@@ -195,24 +197,28 @@ func NewMultistage(
 		return nil
 	})
 
-	outputChan := concurrently.Process(
+	resultStream := concurrently.Process(
 		context.Background(),
 		cw.workerInputChan,
 		&concurrently.Options{PoolSize: int(numWorkers), OutChannelBuffer: int(numWorkers)},
 	)
 	go func(ms *Multistage) {
-		latestSlot := uint64(0)
+		previousSlot := uint64(0)
 		// process the results from the workers
-		for result := range outputChan {
+		for result := range resultStream {
 			switch resValue := result.Value.(type) {
 			case error:
 				panic(resValue)
 			case *memSubtreeStore:
 				subtree := resValue
-				if subtree.slot > latestSlot || subtree.slot == 0 {
-					latestSlot = subtree.slot
-				} else if subtree.slot < latestSlot {
-					panic(fmt.Errorf("slot %d is out of order (latest slot: %d)", subtree.slot, latestSlot))
+				if previousSlot != 0 && subtree.slot > 0 && subtree.parentSlot != previousSlot {
+					// Check that the parent slot is the previous slot that we processed.
+					panic(fmt.Errorf("slot %d has parent slot %d, but previous processed slot is %d (i.e. there's missing slots in the DB)", subtree.slot, subtree.parentSlot, previousSlot))
+				}
+				if subtree.slot > previousSlot || subtree.slot == 0 {
+					previousSlot = subtree.slot
+				} else if subtree.slot < previousSlot {
+					panic(fmt.Errorf("slot %d is out of order (latest slot: %d)", subtree.slot, previousSlot))
 				} else {
 					// subtree.slot == latestSlot
 					panic(fmt.Errorf("slot %d is already processed", subtree.slot))
