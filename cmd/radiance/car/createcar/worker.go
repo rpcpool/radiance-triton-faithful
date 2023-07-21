@@ -95,16 +95,16 @@ func NewIterator(
 		)
 	}
 
-	slotsAvailable := walk.NumSlotsAvailable()
-	if requireFullEpoch && slotsAvailable < EpochLen {
-		return nil, fmt.Errorf("need slots [%d:%d] (epoch %d) but only have up to %d",
-			officialEpochStart, officialEpochStop, epoch, officialEpochStart+slotsAvailable)
-	}
+	numSlotsAvailable := walk.NumSlotsAvailable()
+	// NOTE: some slots might have been skipped, so the NumSlotsAvailable might be less than EpochLen.
+	// But it still can be a valid epoch.
+	// If there are actual missing slots in the dataset of the DBs, that would be caught when checking that
+	// the parent slot of each slot is available (except for the first slot in the epoch, which we currently can't check).
 
 	var stopAt uint64
 	var totalSlotsToProcess uint64
 	if !requireFullEpoch {
-		totalSlotsToProcess = haveStop - haveStart
+		totalSlotsToProcess = numSlotsAvailable
 		stopAt = haveStop
 		klog.Infof(
 			"NOT REQUIRING FULL EPOCH; will process available slots only [%d:%d] (~%d slots)",
