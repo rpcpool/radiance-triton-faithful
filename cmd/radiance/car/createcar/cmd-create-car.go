@@ -139,10 +139,10 @@ func run(c *cobra.Command, args []string) {
 		if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
 			if !hadFirstSlot {
 				hadFirstSlot = true
-				klog.Infof("Started processing DB %d from slot %d", latestDBIndex, slotMeta.Slot)
+				klog.Infof("Started processing DB #%d from slot %d", latestDBIndex, slotMeta.Slot)
 			}
 			if latestDBIndex != latestDB {
-				klog.Infof("Switched to DB %d; started processing new DB from slot %d (prev: %d)", latestDBIndex, slotMeta.Slot, latestSlot)
+				klog.Infof("Switched to DB #%d; started processing new DB from slot %d (prev: %d)", latestDBIndex, slotMeta.Slot, latestSlot)
 				// TODO: warn if we skipped slots
 				if slotMeta.Slot > latestSlot+1 {
 					klog.Warningf(

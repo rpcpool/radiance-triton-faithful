@@ -65,18 +65,18 @@ func NewIterator(
 	if epoch == 0 {
 		klog.Warningf("Epoch is set to 0; please be sure this is what you want")
 	}
+	haveStart, haveStop := walk.SlotEdges()
 
 	// Seek to epoch start and make sure we have all data
 	officialEpochStart, officialEpochStop := CalcEpochLimits(epoch)
 	if requireFullEpoch && !walk.Seek(officialEpochStart) {
 		return nil, fmt.Errorf(
-			"epoch %d first slot %d is not available in any DB",
+			"epoch %d first slot %d is not available in any DB (first available slot is %d)",
 			epoch,
 			officialEpochStart,
+			haveStart,
 		)
 	}
-
-	haveStart, haveStop := walk.SlotEdges()
 
 	if requireFullEpoch && haveStart > officialEpochStart {
 		return nil, fmt.Errorf(
@@ -107,7 +107,7 @@ func NewIterator(
 		totalSlotsToProcess = haveStop - haveStart
 		stopAt = haveStop
 		klog.Infof(
-			"Not requiring full epoch; will process available slots [%d:%d] (~%d slots)",
+			"NOT REQUIRING FULL EPOCH; will process available slots only [%d:%d] (~%d slots)",
 			haveStart, haveStop,
 			// NOTE: there might be gaps in the data (as we are considering the min/max of the provided DBs),
 			// so this is not a reliable estimate.

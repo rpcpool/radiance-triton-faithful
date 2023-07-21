@@ -67,7 +67,7 @@ func open(path string, secondaryPath string) (*DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.Info("allCfNames: ", allCfNames)
+	klog.Infof("CF names: %v for path: %s", allCfNames, path)
 	db := new(DB)
 
 	// Create list of known column families
