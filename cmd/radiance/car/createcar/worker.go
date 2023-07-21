@@ -111,7 +111,7 @@ func NewIterator(
 			haveStart, haveStop,
 			// NOTE: there might be gaps in the data (as we are considering the min/max of the provided DBs),
 			// so this is not a reliable estimate.
-			haveStop-haveStart,
+			numSlotsAvailable,
 		)
 	} else {
 		totalSlotsToProcess = officialEpochStop - officialEpochStart
