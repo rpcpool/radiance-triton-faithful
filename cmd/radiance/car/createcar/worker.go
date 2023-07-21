@@ -69,7 +69,30 @@ func NewIterator(
 	// Seek to epoch start and make sure we have all data
 	officialEpochStart, officialEpochStop := CalcEpochLimits(epoch)
 	if requireFullEpoch && !walk.Seek(officialEpochStart) {
-		return nil, fmt.Errorf("slot %d not available in any DB", officialEpochStart)
+		return nil, fmt.Errorf(
+			"epoch %d first slot %d is not available in any DB",
+			epoch,
+			officialEpochStart,
+		)
+	}
+
+	haveStart, haveStop := walk.SlotEdges()
+
+	if requireFullEpoch && haveStart > officialEpochStart {
+		return nil, fmt.Errorf(
+			"epoch %d first slot %d is not available in any DB (first available slot is %d)",
+			epoch,
+			officialEpochStart,
+			haveStart,
+		)
+	}
+	if requireFullEpoch && haveStop < officialEpochStop {
+		return nil, fmt.Errorf(
+			"epoch %d last slot %d is not available in any DB (last available slot is %d)",
+			epoch,
+			officialEpochStop,
+			haveStop,
+		)
 	}
 
 	slotsAvailable := walk.SlotsAvailable()
@@ -77,8 +100,6 @@ func NewIterator(
 		return nil, fmt.Errorf("need slots [%d:%d] (epoch %d) but only have up to %d",
 			officialEpochStart, officialEpochStop, epoch, officialEpochStart+slotsAvailable)
 	}
-
-	haveStart, haveStop := walk.SlotEdges()
 
 	var stopAt uint64
 	var totalSlotsToProcess uint64
