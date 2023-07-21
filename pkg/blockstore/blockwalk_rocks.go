@@ -77,21 +77,48 @@ func (m *BlockWalk) Seek(slot uint64) bool {
 	return false
 }
 
-// SlotsAvailable returns the number of contiguous slots that lay ahead.
-func (m *BlockWalk) SlotsAvailable() (total uint64) {
+// NumSlotsAvailable returns the number of contiguous slots that lay ahead.
+func (m *BlockWalk) NumSlotsAvailable() (total uint64) {
 	if len(m.handles) == 0 {
 		return 0
 	}
-	start := m.handles[0].Start
-	for _, h := range m.handles {
-		if h.Start > start {
-			return
-		}
-		stop := h.Stop + 1
-		total += stop - start
-		start = stop
+	return calcContiguousSum(m.handles)
+}
+
+func calcContiguousSum(nums []WalkHandle) uint64 {
+	// sort the ranges by start
+	sort.Slice(nums, func(i, j int) bool {
+		return nums[i].Start < nums[j].Start
+	})
+
+	type StartStop struct {
+		Start uint64
+		Stop  uint64
 	}
-	return
+
+	mergedRanges := make([]StartStop, 0, len(nums))
+	// merge overlapping ranges
+	for _, r := range nums {
+		if len(mergedRanges) == 0 {
+			mergedRanges = append(mergedRanges, StartStop{Start: r.Start, Stop: r.Stop})
+			continue
+		}
+		last := mergedRanges[len(mergedRanges)-1]
+		if last.Stop >= r.Start {
+			if last.Stop < r.Stop {
+				last.Stop = r.Stop
+			}
+			mergedRanges[len(mergedRanges)-1] = last
+		} else {
+			mergedRanges = append(mergedRanges, StartStop{Start: r.Start, Stop: r.Stop})
+		}
+	}
+
+	var sum uint64
+	for _, r := range mergedRanges {
+		sum += r.Stop - r.Start + 1
+	}
+	return sum
 }
 
 // SlotEdges returns the lowest and highest slot numbers that are available

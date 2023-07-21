@@ -9,7 +9,7 @@ import (
 // The main (and only) implementation in this package is BlockWalk.
 type BlockWalker interface {
 	Seek(slot uint64) (ok bool)
-	SlotsAvailable() (total uint64)
+	NumSlotsAvailable() (total uint64)
 	SlotEdges() (low, high uint64)
 	Next() (meta *SlotMeta, ok bool)
 	SetOnBeforePop(func() error)

@@ -95,7 +95,7 @@ func NewIterator(
 		)
 	}
 
-	slotsAvailable := walk.SlotsAvailable()
+	slotsAvailable := walk.NumSlotsAvailable()
 	if requireFullEpoch && slotsAvailable < EpochLen {
 		return nil, fmt.Errorf("need slots [%d:%d] (epoch %d) but only have up to %d",
 			officialEpochStart, officialEpochStop, epoch, officialEpochStart+slotsAvailable)
