@@ -213,7 +213,27 @@ func NewMultistage(
 				subtree := resValue
 				if previousSlot != 0 && subtree.slot > 0 && subtree.parentSlot != previousSlot {
 					// Check that the parent slot is the previous slot that we processed.
-					panic(fmt.Errorf("slot %d has parent slot %d, but previous processed slot is %d (i.e. there's missing slots in the DB)", subtree.slot, subtree.parentSlot, previousSlot))
+
+					dbName, err := ms.walker.SlotExistsInAnyDB(subtree.parentSlot)
+					notFoundInAnyDB := err != nil
+					dbMessage := ""
+					if notFoundInAnyDB {
+						dbMessage = fmt.Sprintf("parent slot not found in ANY of the provided DBs")
+					} else {
+						dbMessage = fmt.Sprintf("but found in DB %q; this is a bug, please contact developer", dbName)
+					}
+					parentSlotMeta, err := ms.walker.GetSlotMetaFromAnyDB(subtree.parentSlot)
+					if err == nil {
+						dbMessage += fmt.Sprintf(" (parent slot meta: %+v)", parentSlotMeta)
+					}
+
+					panic(fmt.Errorf(
+						"slot %d has parent slot %d, but previous processed slot is %d (%s)",
+						subtree.slot,
+						subtree.parentSlot,
+						previousSlot,
+						dbMessage,
+					))
 				}
 				if subtree.slot > previousSlot || subtree.slot == 0 {
 					previousSlot = subtree.slot

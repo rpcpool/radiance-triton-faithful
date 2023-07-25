@@ -213,6 +213,37 @@ func (m *BlockWalk) TransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWi
 	return h.DB.GetTransactionMetas(keys...)
 }
 
+func (m *BlockWalk) GetSlotMetaFromAnyDB(slot uint64) (*SlotMeta, error) {
+	for _, h := range m.handles {
+		got, err := h.DB.GetSlotMeta(slot)
+		if err == nil && got != nil {
+			return got, nil
+		}
+	}
+	return nil, fmt.Errorf("meta for slot %d not found in any DB", slot)
+}
+
+func (m *BlockWalk) SlotExistsInAnyDB(slot uint64) (string, error) {
+	for _, h := range m.handles {
+		key := encodeSlotAsKey(slot)
+		opts := getReadOptions()
+		defer putReadOptions(opts)
+		got, err := h.DB.DB.GetCF(opts, h.DB.CfRoot, key)
+		if err != nil {
+			continue
+		}
+		defer got.Free()
+		if got == nil || got.Size() == 0 {
+			continue
+		}
+		if !got.Exists() {
+			continue
+		}
+		return h.DB.DB.Name(), nil
+	}
+	return "", fmt.Errorf("slot %d not found in any DB", slot)
+}
+
 func (m *BlockWalk) BlockTime(slot uint64) (uint64, error) {
 	h := m.handles[0]
 	return h.DB.GetBlockTime(slot)
