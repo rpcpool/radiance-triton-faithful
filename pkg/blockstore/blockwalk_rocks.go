@@ -223,7 +223,7 @@ func (m *BlockWalk) GetSlotMetaFromAnyDB(slot uint64) (*SlotMeta, error) {
 	return nil, fmt.Errorf("meta for slot %d not found in any DB", slot)
 }
 
-func (m *BlockWalk) SlotExistsInAnyDB(slot uint64) (string, error) {
+func (m *BlockWalk) RootExistsInAnyDB(slot uint64) (string, error) {
 	for _, h := range m.handles {
 		key := encodeSlotAsKey(slot)
 		opts := getReadOptions()

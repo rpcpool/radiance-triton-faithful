@@ -52,6 +52,11 @@ func CalcEpochLimits(epoch uint64) (uint64, uint64) {
 	return epochStart, epochStop
 }
 
+// CalcEpochForSlot returns the epoch for the given slot.
+func CalcEpochForSlot(slot uint64) uint64 {
+	return slot / EpochLen
+}
+
 func NewIterator(
 	epoch uint64,
 	walk blockstore.BlockWalker,

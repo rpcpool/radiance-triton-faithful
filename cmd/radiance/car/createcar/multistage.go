@@ -211,20 +211,57 @@ func NewMultistage(
 				panic(resValue)
 			case *memSubtreeStore:
 				subtree := resValue
+
+				if previousSlot == 0 && subtree.slot > 0 {
+					// Cold start: the first we process must have also the parent slot available.
+
+					epochOfSlot := CalcEpochForSlot(subtree.slot)
+					epochOfParentSlot := CalcEpochForSlot(subtree.parentSlot)
+
+					// Must find the parent slot (so to guarantee the continuity of the parentSlot->childSlot chain)
+					_, err := ms.walker.RootExistsInAnyDB(subtree.parentSlot)
+					notFoundInAnyDB := err != nil
+					isAcrossEpochs := epochOfSlot != epochOfParentSlot
+					if notFoundInAnyDB {
+						msg := fmt.Sprintf(
+							"parent slot %d (of slot %d) was not found in ANY of the provided DBs",
+							subtree.parentSlot,
+							subtree.slot,
+						)
+						if isAcrossEpochs {
+							msg += fmt.Sprintf(
+								" (parent slot %d is in epoch %d, slot %d is in epoch %d)",
+								subtree.parentSlot,
+								epochOfParentSlot,
+								subtree.slot,
+								epochOfSlot,
+							)
+						}
+						panic(msg)
+					} else {
+						klog.Infof(
+							"Parent slot %d (epoch %d) of slot %d (epoch %d) was found in one of the provided DBs (this is good)",
+							subtree.parentSlot,
+							epochOfParentSlot,
+							subtree.slot,
+							epochOfSlot,
+						)
+					}
+				}
 				if previousSlot != 0 && subtree.slot > 0 && subtree.parentSlot != previousSlot {
 					// Check that the parent slot is the previous slot that we processed.
 
-					dbName, err := ms.walker.SlotExistsInAnyDB(subtree.parentSlot)
+					dbName, err := ms.walker.RootExistsInAnyDB(subtree.parentSlot)
 					notFoundInAnyDB := err != nil
 					dbMessage := ""
 					if notFoundInAnyDB {
-						dbMessage = fmt.Sprintf("parent slot not found in ANY of the provided DBs")
+						dbMessage = fmt.Sprintf("and parent slot was not found in ANY of the provided DBs")
 					} else {
 						dbMessage = fmt.Sprintf("but found in DB %q; this is a bug, please contact developer", dbName)
 					}
 					parentSlotMeta, err := ms.walker.GetSlotMetaFromAnyDB(subtree.parentSlot)
 					if err == nil {
-						dbMessage += fmt.Sprintf(" (parent slot meta: %+v)", parentSlotMeta)
+						dbMessage += fmt.Sprintf(" (but the parent slot meta was found: %+v)", parentSlotMeta)
 					}
 
 					panic(fmt.Errorf(

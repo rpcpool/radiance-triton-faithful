@@ -101,6 +101,16 @@ func run(c *cobra.Command, args []string) {
 		*flagNextShredRevisionActivationSlot,
 	)
 
+	if *flagRequireFullEpoch {
+		start, stop := CalcEpochLimits(epoch)
+		klog.Infof(
+			"Epoch %d limits: %d to %d",
+			epoch,
+			start,
+			stop,
+		)
+	}
+
 	// Open blockstores
 	dbPaths := *flagDBs
 	handles := make([]blockstore.WalkHandle, len(*flagDBs))
@@ -136,6 +146,9 @@ func run(c *cobra.Command, args []string) {
 	latestSlot := uint64(0)
 	latestDB := int(0) // 0 is the first DB
 	callback := func(slotMeta *blockstore.SlotMeta, latestDBIndex int) error {
+		if *flagRequireFullEpoch && CalcEpochForSlot(slotMeta.Slot) != epoch {
+			return nil
+		}
 		if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
 			if !hadFirstSlot {
 				hadFirstSlot = true
