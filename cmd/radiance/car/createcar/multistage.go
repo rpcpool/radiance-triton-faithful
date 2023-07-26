@@ -35,20 +35,20 @@ import (
 type blockWorker struct {
 	slotMeta  *radianceblockstore.SlotMeta
 	CIDSetter func(slot uint64, cid []byte) error
-	walker    *radianceblockstore.BlockWalk
+	handle    blockstore.WalkHandle
 	done      func(numTx uint64)
 }
 
 func newBlockWorker(
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
-	walker *radianceblockstore.BlockWalk,
+	h blockstore.WalkHandle,
 	done func(uint64),
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:  slotMeta,
 		CIDSetter: CIDSetter,
-		walker:    walker,
+		handle:    h,
 		done:      done,
 	}
 }
@@ -66,7 +66,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		w.done(numTx)
 	}()
 	slot := w.slotMeta.Slot
-	entries, err := w.walker.Entries(w.slotMeta)
+	entries, err := w.handle.Entries(w.slotMeta)
 	if err != nil {
 		return err
 	}
@@ -77,22 +77,22 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	}
 	numTx = uint64(len(transactionMetaKeys))
 
-	metas, err := w.walker.TransactionMetas(transactionMetaKeys...)
+	metas, err := w.handle.DB.GetTransactionMetas(transactionMetaKeys...)
 	if err != nil {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
-	blockTime, err := w.walker.BlockTime(slot)
+	blockTime, err := w.handle.DB.GetBlockTime(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
 	}
 
-	blockHeight, err := w.walker.BlockHeight(slot)
+	blockHeight, err := w.handle.DB.GetBlockHeight(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get block height for slot %d: %w", slot, err)
 	}
 
-	rewards, err := w.walker.Rewards(slot)
+	rewards, err := w.handle.DB.GetRewards(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
@@ -164,7 +164,6 @@ type Multistage struct {
 	waitResultsReceived sync.WaitGroup
 	numReceivedAtomic   *atomic.Int64
 	numTxAtomic         *atomic.Uint64
-	walker              *radianceblockstore.BlockWalk
 	numWrittenObjects   *atomic.Uint64
 }
 
@@ -174,7 +173,6 @@ type Multistage struct {
 func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
-	walker *radianceblockstore.BlockWalk,
 ) (*Multistage, error) {
 	if numWorkers == 0 {
 		numWorkers = uint(runtime.NumCPU())
@@ -183,19 +181,10 @@ func NewMultistage(
 		carFilepath:       finalCARFilepath,
 		workerInputChan:   make(chan concurrently.WorkFunction, numWorkers),
 		waitExecuted:      new(sync.WaitGroup), // used to wait for results
-		walker:            walker,
 		numReceivedAtomic: new(atomic.Int64),
 		numTxAtomic:       new(atomic.Uint64),
 		numWrittenObjects: new(atomic.Uint64),
 	}
-
-	cw.walker.SetOnBeforePop(func() error {
-		// wait for the current batch processing to finish before closing the DB and opening the next one
-		cw.waitExecuted.Wait()
-		// reset the group
-		cw.waitExecuted = new(sync.WaitGroup)
-		return nil
-	})
 
 	resultStream := concurrently.Process(
 		context.Background(),
@@ -214,62 +203,14 @@ func NewMultistage(
 
 				if previousSlot == 0 && subtree.slot > 0 {
 					// Cold start: the first we process must have also the parent slot available.
-
-					epochOfSlot := CalcEpochForSlot(subtree.slot)
-					epochOfParentSlot := CalcEpochForSlot(subtree.parentSlot)
-
-					// Must find the parent slot (so to guarantee the continuity of the parentSlot->childSlot chain)
-					_, err := ms.walker.RootExistsInAnyDB(subtree.parentSlot)
-					notFoundInAnyDB := err != nil
-					isAcrossEpochs := epochOfSlot != epochOfParentSlot
-					if notFoundInAnyDB {
-						msg := fmt.Sprintf(
-							"parent slot %d (of slot %d) was not found in ANY of the provided DBs",
-							subtree.parentSlot,
-							subtree.slot,
-						)
-						if isAcrossEpochs {
-							msg += fmt.Sprintf(
-								" (parent slot %d is in epoch %d, slot %d is in epoch %d)",
-								subtree.parentSlot,
-								epochOfParentSlot,
-								subtree.slot,
-								epochOfSlot,
-							)
-						}
-						panic(msg)
-					} else {
-						klog.Infof(
-							"Parent slot %d (epoch %d) of slot %d (epoch %d) was found in one of the provided DBs (this is good)",
-							subtree.parentSlot,
-							epochOfParentSlot,
-							subtree.slot,
-							epochOfSlot,
-						)
-					}
 				}
 				if previousSlot != 0 && subtree.slot > 0 && subtree.parentSlot != previousSlot {
 					// Check that the parent slot is the previous slot that we processed.
-
-					dbName, err := ms.walker.RootExistsInAnyDB(subtree.parentSlot)
-					notFoundInAnyDB := err != nil
-					dbMessage := ""
-					if notFoundInAnyDB {
-						dbMessage = fmt.Sprintf("and parent slot was not found in ANY of the provided DBs")
-					} else {
-						dbMessage = fmt.Sprintf("but found in DB %q; this is a bug, please contact developer", dbName)
-					}
-					parentSlotMeta, err := ms.walker.GetSlotMetaFromAnyDB(subtree.parentSlot)
-					if err == nil {
-						dbMessage += fmt.Sprintf(" (but the parent slot meta was found: %+v)", parentSlotMeta)
-					}
-
 					panic(fmt.Errorf(
-						"slot %d has parent slot %d, but previous processed slot is %d (%s)",
+						"slot %d has parent slot %d, but previous processed slot is %d",
 						subtree.slot,
 						subtree.parentSlot,
 						previousSlot,
-						dbMessage,
 					))
 				}
 				if subtree.slot > previousSlot || subtree.slot == 0 {
@@ -360,6 +301,7 @@ func (cw *Multistage) getConcurrency() int {
 // OnSlotFromDB is called when a block is received.
 // This MUST be called in order of the slot number.
 func (cw *Multistage) OnSlotFromDB(
+	h blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
 ) error {
 	cw.waitExecuted.Add(1)
@@ -368,7 +310,7 @@ func (cw *Multistage) OnSlotFromDB(
 	cw.workerInputChan <- newBlockWorker(
 		slotMeta,
 		cw.reg.SetCID,
-		cw.walker,
+		h,
 		func(numTx uint64) {
 			cw.numTxAtomic.Add(numTx)
 			cw.waitExecuted.Done()

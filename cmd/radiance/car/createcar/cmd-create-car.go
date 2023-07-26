@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
+	"go.firedancer.io/radiance/pkg/slotedges"
 	"go.firedancer.io/radiance/pkg/versioninfo"
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
@@ -71,10 +72,10 @@ func init() {
 }
 
 func run(c *cobra.Command, args []string) {
-	start := time.Now()
+	startedAt := time.Now()
 
 	defer func() {
-		timeTaken := time.Since(start)
+		timeTaken := time.Since(startedAt)
 		klog.Infof("Time taken: %s", timeTaken)
 	}()
 	numWorkers := *flagWorkers
@@ -100,9 +101,17 @@ func run(c *cobra.Command, args []string) {
 		*flagShredRevision,
 		*flagNextShredRevisionActivationSlot,
 	)
+	if finalCARFilepath == "" {
+		klog.Exitf("Output CAR filepath is required")
+	}
+	if ok, err := fileExists(finalCARFilepath); err != nil {
+		klog.Exitf("Failed to check if CAR file exists: %s", err)
+	} else if ok {
+		klog.Exitf("CAR file already exists: %s", finalCARFilepath)
+	}
 
 	if *flagRequireFullEpoch {
-		start, stop := CalcEpochLimits(epoch)
+		start, stop := slotedges.CalcEpochLimits(epoch)
 		klog.Infof(
 			"Epoch %d limits: %d to %d",
 			epoch,
@@ -122,21 +131,106 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	// Create new walker object
-	walker, err := blockstore.NewBlockWalkWithNextShredRevisionActivationSlot(
+	//////////////////////////////////////////////////////////////////////////////////////////
+	officialEpochStart, officialEpochStop := slotedges.CalcEpochLimits(epoch)
+
+	schedule, err := blockstore.NewSchedule(
+		epoch,
+		*flagRequireFullEpoch,
 		handles,
 		*flagShredRevision,
 		*flagNextShredRevisionActivationSlot,
 	)
 	if err != nil {
-		klog.Exitf("Failed to create multi-DB iterator: %s", err)
+		panic(err)
 	}
-	defer walker.Close()
+	klog.Infof("Traversal schedule:")
+
+	// Print the slots range in each DB:
+	err = schedule.Each(
+		c.Context(),
+		func(dbIndex int, db blockstore.WalkHandle, slots []uint64) error {
+			if len(slots) == 0 {
+				return nil
+			}
+			klog.Infof("DB %d: slot %d - slot %d", dbIndex, slots[0], slots[len(slots)-1])
+			return nil
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("")
+
+	slots := schedule.Slots()
+	if len(slots) == 0 {
+		klog.Exitf("No slots to process")
+	}
+	klog.Infof("Total slots to process: %d", len(slots))
+	klog.Infof("First slot in schedule: %d", slots[0])
+	klog.Infof("Last slot in schedule: %d", slots[len(slots)-1])
+	start, stop := slotedges.CalcEpochLimits(epoch)
+	klog.Infof(
+		"Epoch %d limits: %d to %d",
+		epoch,
+		start,
+		stop,
+	)
+	fmt.Println("")
+	if *flagRequireFullEpoch {
+		err := schedule.SatisfiesEpochEdges(epoch)
+		if err != nil {
+			klog.Exitf("Schedule does not satisfy epoch %d: %s", epoch, err)
+		}
+		klog.Infof("Schedule satisfies epoch %d", epoch)
+	}
+	fmt.Println("")
+
+	totalSlotsToProcess := uint64(len(slots))
+	if !*flagRequireFullEpoch {
+		first, last := slots[0], slots[len(slots)-1]
+		klog.Infof(
+			"NOT REQUIRING FULL EPOCH; will process available slots only [%d:%d] (~%d slots)",
+			first, last,
+			// NOTE: there might be gaps in the data (as we are considering the min/max of the provided DBs),
+			// so this is not a reliable estimate.
+			totalSlotsToProcess,
+		)
+	} else {
+		klog.Infof(
+			"Will process slots only in the %d epoch range [%d:%d] (discarding slots outside)",
+			epoch, officialEpochStart, officialEpochStop,
+		)
+	}
+
+	limitSlots := *flagLimitSlots
+	if limitSlots > 0 && limitSlots < totalSlotsToProcess {
+		totalSlotsToProcess = limitSlots
+		klog.Infof(
+			"Limiting slots to %d",
+			limitSlots,
+		)
+	}
+
+	// write slots to a file {epoch}.slots.txt
+	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
+	klog.Infof("Saving slots to file: %s", slotsFilepath)
+	slotsFile, err := os.Create(slotsFilepath)
+	if err != nil {
+		klog.Exitf("Failed to create slots file: %s", err)
+	}
+	defer slotsFile.Close()
+	for _, slot := range slots {
+		_, err := slotsFile.WriteString(fmt.Sprintf("%d\n", slot))
+		if err != nil {
+			klog.Exitf("Failed to write slot to slots file: %s", err)
+		}
+	}
+	/// --------------------------------------------------------------------------------------------------
 
 	multi, err := NewMultistage(
 		finalCARFilepath,
 		numWorkers,
-		walker,
 	)
 	if err != nil {
 		panic(err)
@@ -145,77 +239,75 @@ func run(c *cobra.Command, args []string) {
 	hadFirstSlot := false
 	latestSlot := uint64(0)
 	latestDB := int(0) // 0 is the first DB
-	callback := func(slotMeta *blockstore.SlotMeta, latestDBIndex int) error {
-		if *flagRequireFullEpoch && CalcEpochForSlot(slotMeta.Slot) != epoch {
-			return nil
-		}
-		if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
-			if !hadFirstSlot {
-				hadFirstSlot = true
-				klog.Infof("Started processing DB #%d from slot %d", latestDBIndex, slotMeta.Slot)
+
+	iter := schedule.NewIterator(limitSlots)
+
+	err = iter.Iterate(
+		c.Context(),
+		func(dbIdex int, h blockstore.WalkHandle, slot uint64, shredRevision int) error {
+			slotMeta, err := h.DB.GetSlotMeta(slot)
+			if err != nil {
+				return fmt.Errorf("failed to get slot meta for slot %d: %w", slot, err)
 			}
-			if latestDBIndex != latestDB {
-				klog.Infof("Switched to DB #%d; started processing new DB from slot %d (prev: %d)", latestDBIndex, slotMeta.Slot, latestSlot)
-				// TODO: warn if we skipped slots
-				if slotMeta.Slot > latestSlot+1 {
-					klog.Warningf(
-						"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from slot %d",
-						latestSlot+1,
-						slotMeta.Slot-1,
-						latestSlot,
-						slotMeta.Slot,
-					)
+			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slotMeta.Slot) != epoch {
+				return nil
+			}
+			if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
+				if !hadFirstSlot {
+					hadFirstSlot = true
+					klog.Infof("Started processing DB #%d from slot %d", dbIdex, slotMeta.Slot)
+				}
+				if dbIdex != latestDB {
+					klog.Infof("Switched to DB #%d; started processing new DB from slot %d (prev: %d)", dbIdex, slotMeta.Slot, latestSlot)
+					// TODO: warn if we skipped slots
+					if slotMeta.Slot > latestSlot+1 {
+						klog.Warningf(
+							"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from slot %d",
+							latestSlot+1,
+							slotMeta.Slot-1,
+							latestSlot,
+							slotMeta.Slot,
+						)
+					}
+				}
+				latestSlot = slotMeta.Slot
+				latestDB = dbIdex
+			} else if slotMeta.Slot < latestSlot {
+				if dbIdex == latestDB {
+					panic(fmt.Errorf("slot %d is out of order (previous processed slot was: %d)", slotMeta.Slot, latestSlot))
+				} else {
+					// TODO: remove
+					// we switched to another DB; print warning and return
+					// klog.Infof("New DB; slot %d was supposedly already processed (previous processed slot was: %d); skipping", slotMeta.Slot, latestSlot)
+					return nil
+				}
+			} else {
+				// slotMeta.Slot == latestSlot
+				if slotMeta.Slot != 0 && dbIdex == latestDB {
+					panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
+				} else {
+					// we switched to another DB; print warning and return
+					// klog.Infof("New DB; slot %d is already processed; skipping", slotMeta.Slot)
+					return nil
 				}
 			}
-			latestSlot = slotMeta.Slot
-			latestDB = latestDBIndex
-		} else if slotMeta.Slot < latestSlot {
-			if latestDBIndex == latestDB {
-				panic(fmt.Errorf("slot %d is out of order (previous processed slot was: %d)", slotMeta.Slot, latestSlot))
-			} else {
-				// TODO: remove
-				// we switched to another DB; print warning and return
-				// klog.Infof("New DB; slot %d was supposedly already processed (previous processed slot was: %d); skipping", slotMeta.Slot, latestSlot)
-				return nil
+			err = multi.OnSlotFromDB(h, slotMeta)
+			if err != nil {
+				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 			}
-		} else {
-			// slotMeta.Slot == latestSlot
-			if slotMeta.Slot != 0 && latestDBIndex == latestDB {
-				panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
-			} else {
-				// we switched to another DB; print warning and return
-				// klog.Infof("New DB; slot %d is already processed; skipping", slotMeta.Slot)
-				return nil
-			}
-		}
-		err = multi.OnSlotFromDB(slotMeta)
-		if err != nil {
-			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
-		}
-		return nil
-	}
-	wrk, err := NewIterator(
-		epoch,
-		walker,
-		*flagRequireFullEpoch,
-		*flagLimitSlots,
-		callback,
-	)
+			return nil
+		})
 	if err != nil {
-		klog.Exitf("Failed to init cargen: %s", err)
+		panic(err)
 	}
 
-	ctx := c.Context()
-	if err = wrk.Run(ctx); err != nil {
-		klog.Exitf("FATAL: %s", err)
-	}
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
 	epochCID, slotRecap, err := multi.FinalizeDAG(epoch)
 	if err != nil {
 		panic(err)
 	}
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
-	tookCarCreation := time.Since(start)
+	tookCarCreation := time.Since(startedAt)
 	klog.Infof("Done. Completed CAR file generation in %s", tookCarCreation)
 	type Recap struct {
 		Epoch                 uint64                 `yaml:"epoch"`
@@ -293,7 +385,7 @@ func run(c *cobra.Command, args []string) {
 
 	{
 		klog.Info("---")
-		timeTakenUntilAfterCARFinalization := time.Since(start)
+		timeTakenUntilAfterCARFinalization := time.Since(startedAt)
 		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
 			panic(err)
@@ -341,7 +433,7 @@ func run(c *cobra.Command, args []string) {
 		}
 		thisCarRecap.CarFileSizeBytes = carFileSize
 	}
-	thisCarRecap.TookTotal = time.Since(start)
+	thisCarRecap.TookTotal = time.Since(startedAt)
 
 	{
 		// save the recap to a file, in the format {epoch}.recap.yaml
@@ -359,7 +451,7 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	timeTaken := time.Since(start)
+	timeTaken := time.Since(startedAt)
 	klog.Info("---")
 	klog.Infof("Total time taken: %s", timeTaken)
 
