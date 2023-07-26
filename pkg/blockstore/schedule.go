@@ -73,7 +73,7 @@ func (s TraversalSchedule) LastSlot() (uint64, bool) {
 	return last.LastSlot()
 }
 
-// Each iterates over the schedule.
+// Each iterates over each DB in the schedule.
 func (s TraversalSchedule) Each(
 	ctx context.Context,
 	f func(dbIndex int, db WalkHandle, slots []uint64) error,
@@ -92,6 +92,7 @@ func (s TraversalSchedule) Each(
 	return nil
 }
 
+// EachSlot iterates over each slot in the schedule.
 func (s TraversalSchedule) EachSlot(
 	ctx context.Context,
 	f func(dbIdex int, h WalkHandle, slot uint64, shredRevision int) error,

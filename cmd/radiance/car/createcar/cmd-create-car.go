@@ -144,6 +144,7 @@ func run(c *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
+	defer schedule.Close()
 	klog.Infof("Traversal schedule:")
 
 	// Print the slots range in each DB:

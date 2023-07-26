@@ -40,6 +40,7 @@ func sortWalkHandles(h []WalkHandle, shredRevision int, nextRevisionActivationSl
 }
 
 func (wh *WalkHandle) Entries(meta *SlotMeta) ([][]shred.Entry, error) {
+	// TODO: handle concurrent calls to Entries() on the same WalkHandle.
 	if wh.nextShredRevisionActivationSlot != nil && meta.Slot >= *wh.nextShredRevisionActivationSlot {
 		wh.shredRevision++
 		wh.nextShredRevisionActivationSlot = nil
