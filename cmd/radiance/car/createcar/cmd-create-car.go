@@ -101,6 +101,11 @@ func run(c *cobra.Command, args []string) {
 		*flagShredRevision,
 		*flagNextShredRevisionActivationSlot,
 	)
+
+	if *flagRequireFullEpoch && *flagLimitSlots > 0 {
+		klog.Exitf("Cannot use both --require-full-epoch and --limit-slots")
+	}
+
 	if finalCARFilepath == "" {
 		klog.Exitf("Output CAR filepath is required")
 	}
@@ -131,8 +136,7 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	//////////////////////////////////////////////////////////////////////////////////////////
-
+	klog.Infof("Calculating traversal schedule...")
 	schedule, err := blockstore.NewSchedule(
 		epoch,
 		*flagRequireFullEpoch,
@@ -160,7 +164,7 @@ func run(c *cobra.Command, args []string) {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("")
+	klog.Info("---")
 
 	slots := schedule.Slots()
 	if len(slots) == 0 {
@@ -175,7 +179,7 @@ func run(c *cobra.Command, args []string) {
 		officialEpochStart,
 		officialEpochStop,
 	)
-	fmt.Println("")
+	klog.Info("---")
 	if *flagRequireFullEpoch {
 		err := schedule.SatisfiesEpochEdges(epoch)
 		if err != nil {
@@ -183,7 +187,7 @@ func run(c *cobra.Command, args []string) {
 		}
 		klog.Infof("Schedule satisfies epoch %d", epoch)
 	}
-	fmt.Println("")
+	klog.Info("---")
 
 	totalSlotsToProcess := uint64(len(slots))
 	if !*flagRequireFullEpoch {
@@ -227,7 +231,6 @@ func run(c *cobra.Command, args []string) {
 			klog.Exitf("Failed to write slot to slots file: %s", err)
 		}
 	}
-	/// --------------------------------------------------------------------------------------------------
 
 	multi, err := NewMultistage(
 		finalCARFilepath,

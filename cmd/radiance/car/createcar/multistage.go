@@ -686,6 +686,7 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
+	klog.Infof("CAR contains %d slots", len(allSlots))
 	klog.Infof("CAR contains %d transactions", cw.numTxAtomic.Load())
 	klog.Infof("CAR contains %d objects", cw.NumberOfWrittenObjects())
 
