@@ -110,13 +110,13 @@ func run(c *cobra.Command, args []string) {
 		klog.Exitf("CAR file already exists: %s", finalCARFilepath)
 	}
 
+	officialEpochStart, officialEpochStop := slotedges.CalcEpochLimits(epoch)
 	if *flagRequireFullEpoch {
-		start, stop := slotedges.CalcEpochLimits(epoch)
 		klog.Infof(
 			"Epoch %d limits: %d to %d",
 			epoch,
-			start,
-			stop,
+			officialEpochStart,
+			officialEpochStop,
 		)
 	}
 
@@ -132,7 +132,6 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	//////////////////////////////////////////////////////////////////////////////////////////
-	officialEpochStart, officialEpochStop := slotedges.CalcEpochLimits(epoch)
 
 	schedule, err := blockstore.NewSchedule(
 		epoch,
@@ -170,12 +169,11 @@ func run(c *cobra.Command, args []string) {
 	klog.Infof("Total slots to process: %d", len(slots))
 	klog.Infof("First slot in schedule: %d", slots[0])
 	klog.Infof("Last slot in schedule: %d", slots[len(slots)-1])
-	start, stop := slotedges.CalcEpochLimits(epoch)
 	klog.Infof(
 		"Epoch %d limits: %d to %d",
 		epoch,
-		start,
-		stop,
+		officialEpochStart,
+		officialEpochStop,
 	)
 	fmt.Println("")
 	if *flagRequireFullEpoch {
@@ -200,7 +198,9 @@ func run(c *cobra.Command, args []string) {
 	} else {
 		klog.Infof(
 			"Will process slots only in the %d epoch range [%d:%d] (discarding slots outside)",
-			epoch, officialEpochStart, officialEpochStop,
+			epoch,
+			officialEpochStart,
+			officialEpochStop,
 		)
 	}
 
@@ -215,10 +215,10 @@ func run(c *cobra.Command, args []string) {
 
 	// write slots to a file {epoch}.slots.txt
 	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
-	klog.Infof("Saving slots to file: %s", slotsFilepath)
+	klog.Infof("Saving slot list to file: %s", slotsFilepath)
 	slotsFile, err := os.Create(slotsFilepath)
 	if err != nil {
-		klog.Exitf("Failed to create slots file: %s", err)
+		klog.Exitf("Failed to create slot list file: %s", err)
 	}
 	defer slotsFile.Close()
 	for _, slot := range slots {
@@ -246,12 +246,12 @@ func run(c *cobra.Command, args []string) {
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h blockstore.WalkHandle, slot uint64, shredRevision int) error {
+			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
+				return nil
+			}
 			slotMeta, err := h.DB.GetSlotMeta(slot)
 			if err != nil {
 				return fmt.Errorf("failed to get slot meta for slot %d: %w", slot, err)
-			}
-			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slotMeta.Slot) != epoch {
-				return nil
 			}
 			if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
 				if !hadFirstSlot {
