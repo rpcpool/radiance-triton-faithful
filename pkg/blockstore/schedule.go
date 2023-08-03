@@ -489,7 +489,7 @@ func (schedule *TraversalSchedule) init(
 					klog.Infof(("override worked: %d -> %d (recovered missing root)"), gotRoot, wanted)
 					if existingOverride, ok := overrides[gotRoot]; ok {
 						if existingOverride != wanted {
-							return fmt.Errorf("Override already exists: %d -> %d", gotRoot, existingOverride)
+							klog.Infof("Override already exists: %d -> %d", gotRoot, existingOverride)
 						}
 					} else {
 						overrides[gotRoot] = wanted
