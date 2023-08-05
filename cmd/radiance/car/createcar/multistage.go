@@ -35,14 +35,14 @@ import (
 type blockWorker struct {
 	slotMeta  *radianceblockstore.SlotMeta
 	CIDSetter func(slot uint64, cid []byte) error
-	handle    blockstore.WalkHandle
+	handle    *blockstore.WalkHandle
 	done      func(numTx uint64)
 }
 
 func newBlockWorker(
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
-	h blockstore.WalkHandle,
+	h *blockstore.WalkHandle,
 	done func(uint64),
 ) *blockWorker {
 	return &blockWorker{
@@ -301,7 +301,7 @@ func (cw *Multistage) getConcurrency() int {
 // OnSlotFromDB is called when a block is received.
 // This MUST be called in order of the slot number.
 func (cw *Multistage) OnSlotFromDB(
-	h blockstore.WalkHandle,
+	h *blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
 ) error {
 	cw.waitExecuted.Add(1)

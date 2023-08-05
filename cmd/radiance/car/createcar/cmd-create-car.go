@@ -127,9 +127,10 @@ func run(c *cobra.Command, args []string) {
 
 	// Open blockstores
 	dbPaths := *flagDBs
-	handles := make([]blockstore.WalkHandle, len(*flagDBs))
+	handles := make([]*blockstore.WalkHandle, len(*flagDBs))
 	for i := range handles {
 		var err error
+		handles[i] = &blockstore.WalkHandle{}
 		handles[i].DB, err = blockstore.OpenReadOnly(dbPaths[i])
 		if err != nil {
 			klog.Exitf("Failed to open blockstore at %s: %s", dbPaths[i], err)
@@ -153,7 +154,7 @@ func run(c *cobra.Command, args []string) {
 	// Print the slots range in each DB:
 	err = schedule.Each(
 		c.Context(),
-		func(dbIndex int, db blockstore.WalkHandle, slots []uint64) error {
+		func(dbIndex int, db *blockstore.WalkHandle, slots []uint64) error {
 			if len(slots) == 0 {
 				return nil
 			}
@@ -248,7 +249,7 @@ func run(c *cobra.Command, args []string) {
 
 	err = iter.Iterate(
 		c.Context(),
-		func(dbIdex int, h blockstore.WalkHandle, slot uint64, shredRevision int) error {
+		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
 			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
 				return nil
 			}

@@ -16,7 +16,7 @@ type WalkHandle struct {
 }
 
 // sortWalkHandles detects bounds of each DB and sorts handles.
-func sortWalkHandles(h []WalkHandle, shredRevision int, nextRevisionActivationSlot *uint64) error {
+func sortWalkHandles(h []*WalkHandle, shredRevision int, nextRevisionActivationSlot *uint64) error {
 	for i, db := range h {
 		// Find lowest and highest available slot in DB.
 		start, err := getLowestCompletedSlot(db.DB, shredRevision, nextRevisionActivationSlot)
@@ -27,7 +27,7 @@ func sortWalkHandles(h []WalkHandle, shredRevision int, nextRevisionActivationSl
 		if err != nil {
 			return err
 		}
-		h[i] = WalkHandle{
+		h[i] = &WalkHandle{
 			Start: start,
 			Stop:  stop,
 			DB:    db.DB,

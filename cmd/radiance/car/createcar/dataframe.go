@@ -145,7 +145,7 @@ func CreateAndStoreFrames(
 	first := frames[0]
 	// otherwise, link them together, backwards
 	rest := frames[1:]
-	revertSlice(rest)
+	reverse(rest)
 
 	split := splitSlice(rest, NumNextLinks)
 
@@ -153,7 +153,7 @@ func CreateAndStoreFrames(
 	for _, chunk := range split {
 		links := make([]datamodel.Link, len(chunk))
 		for j, frame := range chunk {
-			reverseLinkSlice(previousLinks)
+			reverse(previousLinks)
 			frame.Next = douplePointerLinkSlice(previousLinks)
 			dataFrameNode, err := frameToDatamodelNode(frame)
 			if err != nil {
@@ -171,10 +171,17 @@ func CreateAndStoreFrames(
 		previousLinks = links
 	}
 
-	reverseLinkSlice(previousLinks)
+	reverse(previousLinks)
 	first.Next = douplePointerLinkSlice(previousLinks)
 
 	return first, nil
+}
+
+func reverse[T any](x []T) {
+	for i := len(x)/2 - 1; i >= 0; i-- {
+		opp := len(x) - 1 - i
+		x[i], x[opp] = x[opp], x[i]
+	}
 }
 
 func douplePointerLinkSlice(l ipldbindcode.List__Link) **ipldbindcode.List__Link {
@@ -226,20 +233,6 @@ const (
 	MaxObjectSize = 1 << 20 // 1 MiB
 	NumNextLinks  = 5       // how many links to store in each dataFrame
 )
-
-func revertSlice(slice []*ipldbindcode.DataFrame) {
-	for i := len(slice)/2 - 1; i >= 0; i-- {
-		opp := len(slice) - 1 - i
-		slice[i], slice[opp] = slice[opp], slice[i]
-	}
-}
-
-func reverseLinkSlice(slice []datamodel.Link) {
-	for i := len(slice)/2 - 1; i >= 0; i-- {
-		opp := len(slice) - 1 - i
-		slice[i], slice[opp] = slice[opp], slice[i]
-	}
-}
 
 func splitSlice[T comparable](slice []T, size int) [][]T {
 	var chunks [][]T
