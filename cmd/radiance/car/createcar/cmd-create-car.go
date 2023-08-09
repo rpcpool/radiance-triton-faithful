@@ -49,6 +49,7 @@ var (
 	flagSkipHash                        = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
 	flagShredRevision                   = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot")
+	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 )
 
 func init() {
@@ -216,6 +217,12 @@ func run(c *cobra.Command, args []string) {
 			"Limiting slots to %d",
 			limitSlots,
 		)
+	}
+
+	if *flagCheckOnly {
+		klog.Infof("Check only; exiting")
+		time.Sleep(1 * time.Second)
+		os.Exit(0)
 	}
 
 	// write slots to a file {epoch}.slots.txt
