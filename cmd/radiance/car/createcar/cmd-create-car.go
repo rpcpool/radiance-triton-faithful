@@ -48,7 +48,7 @@ var (
 	flagLimitSlots                      = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
 	flagSkipHash                        = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
 	flagShredRevision                   = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
-	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot")
+	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 )
 
