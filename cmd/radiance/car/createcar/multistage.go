@@ -688,7 +688,7 @@ type MultistageRecap struct {
 // the CAR file with the root of the DAG (the Epoch object CID).
 func (cw *Multistage) FinalizeDAG(
 	epoch uint64,
-) (datamodel.Link, *MultistageRecap, error) {
+) (datamodel.Link, *MultistageRecap, []uint64, error) {
 	{
 		// wait for all slots to be registered
 		klog.Infof("Waiting for all slots to be registered...")
@@ -702,7 +702,7 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	allRegistered, err := cw.reg.GetAll()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get all links: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get all links: %w", err)
 	}
 	allSlots := make([]uint64, 0, len(allRegistered))
 	for _, slot := range allRegistered {
@@ -721,7 +721,7 @@ func (cw *Multistage) FinalizeDAG(
 	klog.Infof("Completing DAG for epoch %d...", epoch)
 	epochRootLink, err := cw.constructEpoch(epoch, schedule)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to construct epoch: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
 	klog.Infof("Completed DAG for epoch %d", epoch)
 
@@ -735,7 +735,7 @@ func (cw *Multistage) FinalizeDAG(
 	klog.Infof("Closing CAR...")
 	err = cw.Close()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to close file: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to close file: %w", err)
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
@@ -748,12 +748,12 @@ func (cw *Multistage) FinalizeDAG(
 		klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
 		err = cw.replaceRoot(epochCid)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to replace roots in file: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to replace roots in file: %w", err)
 		}
 		klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
 	}
 
-	return epochRootLink, slotRecap, err
+	return epochRootLink, slotRecap, allSlots, err
 }
 
 func (cw *Multistage) NumberOfTransactions() uint64 {

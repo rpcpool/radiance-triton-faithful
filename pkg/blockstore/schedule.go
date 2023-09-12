@@ -76,13 +76,13 @@ func (s TraversalSchedule) LastSlot() (uint64, bool) {
 // Each iterates over each DB in the schedule.
 func (s TraversalSchedule) Each(
 	ctx context.Context,
-	f func(dbIndex int, db *WalkHandle, slots []uint64) error,
+	callback func(dbIndex int, db *WalkHandle, slots []uint64) error,
 ) error {
 	for dbIndex, db := range s.schedule {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if err := f(dbIndex, db.handle, db.slots); err != nil {
+		if err := callback(dbIndex, db.handle, db.slots); err != nil {
 			if err == ErrStopIteration {
 				return nil
 			}

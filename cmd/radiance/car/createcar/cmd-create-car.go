@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -314,9 +315,22 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
-	epochCID, slotRecap, err := multi.FinalizeDAG(epoch)
+	epochCID, slotRecap, gotSlots, err := multi.FinalizeDAG(epoch)
 	if err != nil {
 		panic(err)
+	}
+	{
+		calculatedSchedule := removeIf(slots, func(block uint64) bool {
+			return slotedges.CalcEpochForSlot(block) != epoch
+		})
+		processedSlots := removeIf(gotSlots, func(block uint64) bool {
+			return slotedges.CalcEpochForSlot(block) != epoch
+		})
+
+		_, _, areDifferent := compare(calculatedSchedule, processedSlots)
+		if areDifferent {
+			klog.Exitf("The calculated schedule and the processed slots (that were written to the CAR file) are different")
+		}
 	}
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
 	tookCarCreation := time.Since(startedAt)
@@ -532,4 +546,86 @@ func getDirSize(path string) (uint64, error) {
 		return nil
 	})
 	return size, err
+}
+
+func removeIf(slice []uint64, remover func(uint64) bool) []uint64 {
+	var out []uint64
+	for _, item := range slice {
+		if !remover(item) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func uniqueBlocks(blocks []uint64) []uint64 {
+	// sort, then remove duplicates:
+	sort.Slice(blocks, func(i, j int) bool {
+		return blocks[i] < blocks[j]
+	})
+	var out []uint64
+	for i := range blocks {
+		if i == 0 || blocks[i] != blocks[i-1] {
+			out = append(out, blocks[i])
+		}
+	}
+	return out
+}
+
+func compare(scheduleList []uint64, carList []uint64) ([]uint64, []uint64, bool) {
+	scheduleList = uniqueBlocks(scheduleList)
+	carList = uniqueBlocks(carList)
+
+	hasDiff := false
+	// blocks in schedule but not in car:
+	var removed []uint64
+	for _, block := range scheduleList {
+		if !contains(carList, block) {
+			removed = append(removed, block)
+		}
+	}
+	if len(removed) > 0 {
+		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("schedule"), red("car"))
+		for _, block := range removed {
+			fmt.Println(block)
+		}
+		hasDiff = true
+	}
+
+	// blocks in car but not in schedule:
+	var added []uint64
+	for _, block := range carList {
+		if !contains(scheduleList, block) {
+			added = append(added, block)
+		}
+	}
+	if len(added) > 0 {
+		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("car"), red("schedule"))
+		for _, block := range added {
+			fmt.Println(block)
+		}
+		hasDiff = true
+	}
+
+	if !hasDiff {
+		fmt.Println("✅ No differences between schedule and car")
+	}
+	return added, removed, hasDiff
+}
+
+func contains(slots []uint64, slot uint64) bool {
+	i := SearchUint64(slots, slot)
+	return i < len(slots) && slots[i] == slot
+}
+
+func SearchUint64(a []uint64, x uint64) int {
+	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
+}
+
+func red(s string) string {
+	return "\033[31m" + s + "\033[0m"
+}
+
+func green(s string) string {
+	return "\033[32m" + s + "\033[0m"
 }
