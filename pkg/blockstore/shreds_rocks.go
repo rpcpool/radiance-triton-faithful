@@ -56,11 +56,11 @@ func GetDataShredsFromIter(
 			return nil, fmt.Errorf("missing shreds for slot %d", slot)
 		}
 		if index != uint64(i) {
-			return nil, fmt.Errorf("missing shred %d for slot %d", i, index)
+			return nil, fmt.Errorf("missing shred %d for slot %d", i, slot)
 		}
 		s := shred.NewShredFromSerialized(iter.Value().Data(), revision)
 		if !s.Ok() {
-			return nil, fmt.Errorf("failed to deserialize shred %d/%d", slot, i)
+			return nil, fmt.Errorf("failed to deserialize shred %d/%d for slot %d", i, endIdx, slot)
 		}
 		shreds = append(shreds, s)
 		iter.Next()

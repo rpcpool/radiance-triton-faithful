@@ -413,12 +413,12 @@ func (schedule *TraversalSchedule) init(
 	copy(reversedHandles, handles)
 	reverse(reversedHandles)
 
-	overrides := make(map[uint64]uint64)
+	recoveries := make(map[uint64]struct{})
 	defer func() {
-		if len(overrides) > 0 {
-			klog.Infof("Overrides:")
-			for k, v := range overrides {
-				klog.Infof("  %d -> %d", k, v)
+		if len(recoveries) > 0 {
+			klog.Infof("Recovered slot roots:")
+			for k := range recoveries {
+				klog.Infof("  - %d", k)
 			}
 		}
 	}()
@@ -482,22 +482,24 @@ func (schedule *TraversalSchedule) init(
 				break slotLoop
 			}
 			// Check what we got (might be a different gotRoot than what we wanted):
+			recovered := false
 			if gotRoot != wanted {
-				klog.Errorf(("seeked to slot %d but got slot %d; trying override"), wanted, gotRoot)
+				klog.Errorf(("seeked to slot %d but got slot %d; trying recovery..."), wanted, gotRoot)
 				// The wanted root was not found in the CfRoot; if it exists in the CfMeta, we can still use it.
 				_, err := handle.DB.GetSlotMeta(wanted)
 				if err == nil {
-					klog.Infof(("override worked: %d -> %d (recovered missing root)"), gotRoot, wanted)
-					if existingOverride, ok := overrides[gotRoot]; ok {
-						if existingOverride != wanted {
-							klog.Infof("Override already exists: %d -> %d", gotRoot, existingOverride)
-						}
-					} else {
-						overrides[gotRoot] = wanted
+					klog.Infof(("recovery worked: recovered the wanted slot %d"), wanted)
+					recovered = true
+					if _, ok := recoveries[wanted]; ok {
+						klog.Infof(
+							"Root slot already recovered: %d",
+							wanted,
+						)
 					}
+					recoveries[wanted] = struct{}{}
 					gotRoot = wanted
 				} else {
-					// override failed.
+					// recovery failed.
 					if prevProcessedSlot != nil {
 						// We really wanted that slot because it was the parent of the previous slot.
 						// If we can't find it, we can't continue.
@@ -505,7 +507,7 @@ func (schedule *TraversalSchedule) init(
 					}
 					// This is fine because the first wanted slot was a guess, and it wasn't found (and the DB returned a different slot).
 					// We can just use the slot we got.
-					klog.Infof(("override failed: %d -> %d (which doesn't exist)"), gotRoot, wanted)
+					klog.Infof(("recovery failed: wanted %d (which doesn't exist), but can only get %d"), wanted, gotRoot)
 					if wanted == stop && gotRoot < stop {
 						// We wanted the last slot, but we got a smaller slot.
 						// This means that we can't be sure the DB is complete.
@@ -536,12 +538,27 @@ func (schedule *TraversalSchedule) init(
 				activationSlot = nil
 			}
 
-			if false {
+			if recovered {
+				// If the slot was "recovered", let's check that we have all the data for it.
+				// If we have missing data, we can't use it. Which means it might be the end of the DB.
+				//
+				// From pkg/blockstore/blockwalk_rocks.go:65-68:
+				// The Solana validator periodically prunes old slots to keep database space bounded.
+				// Therefore, the first (few) slots might have valid meta entries but missing data shreds.
+				// To work around this, we simply start at the lowest meta and iterate until we find a complete entry.
 				_, err = handle.DB.GetEntries(meta, shredRevision)
 				if err == nil {
 					// Success!
 				} else {
-					return fmt.Errorf("Failed to get entries for slot %d: %s", gotRoot, err)
+					klog.Warningf(
+						"recovered slot %d from DB %s is missing data (moving down to another DB): %s",
+						gotRoot,
+						handle.DB.DB.Name(),
+						err,
+					)
+					// return fmt.Errorf("Failed to get entries for slot %d: %s", gotRoot, err)
+					// Move to next DB.
+					break slotLoop
 				}
 			}
 			// fmt.Printf("slot=%d has %d entries; prev=%d\n", gotRoot, len(entries), meta.ParentSlot)
