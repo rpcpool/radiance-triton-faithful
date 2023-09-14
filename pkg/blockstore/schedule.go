@@ -320,9 +320,11 @@ func NewSchedule(
 		[2]uint64{officialEpochStart, officialEpochStop},
 		[2]uint64{startFrom, stopAt},
 	) {
-		klog.Exitf("no overlap between requested epoch [%d:%d] and available slots [%d:%d]",
+		klog.Exitf(
+			"no overlap between requested epoch [%d:%d] and available slots [%d:%d]",
 			officialEpochStart, officialEpochStop,
-			startFrom, stopAt)
+			startFrom, stopAt,
+		)
 	}
 
 	schedule := new(TraversalSchedule)
@@ -422,7 +424,6 @@ func (schedule *TraversalSchedule) init(
 			}
 		}
 	}()
-	officialEpochStart, _ := slotedges.CalcEpochLimits(epoch)
 
 	activationSlot := cloneUint64Ptr(nextRevisionActivationSlot)
 	var prevProcessedSlot *uint64
@@ -498,13 +499,13 @@ func (schedule *TraversalSchedule) init(
 			}
 
 			if start != 0 && gotRoot < start-1 {
-				// inlude one more slot
 				logInfof(
 					"reached slot %d which is lower than the low bound %d (OK)",
 					gotRoot,
 					start,
 				)
-				break slotLoop
+				// TODO: why exit here?
+				// break slotLoop
 			}
 			// Check what we got (might be a different gotRoot than what we wanted):
 			recovered := false
@@ -529,7 +530,7 @@ func (schedule *TraversalSchedule) init(
 					gotRoot = wanted
 				} else {
 					// recovery failed:
-					if prevProcessedSlot != nil {
+					if thisWasParentOfPrevious := prevProcessedSlot != nil; thisWasParentOfPrevious {
 						// We really wanted that slot because it was the parent of the previous slot.
 						// If we can't find it, we can't continue.
 						return fmt.Errorf(
@@ -548,7 +549,7 @@ func (schedule *TraversalSchedule) init(
 						gotRoot,
 					)
 					if wanted == stop && gotRoot < stop {
-						// We wanted the last slot, but we got a smaller slot.
+						// We wanted the last slot (the biggest slot in the epoch), but we got a smaller slot.
 						// This means that we can't be sure the DB is complete.
 						// We can't continue.
 						return fmt.Errorf(
@@ -620,7 +621,7 @@ func (schedule *TraversalSchedule) init(
 			prevProcessedSlot = &gotRoot
 			{
 				// if prevProcessedSlot is already in the previous Epoch, we can stop.
-				if prevProcessedSlot != nil && *prevProcessedSlot < officialEpochStart {
+				if prevProcessedSlot != nil && *prevProcessedSlot < start {
 					break slotLoop
 				}
 			}
@@ -639,7 +640,7 @@ func (schedule *TraversalSchedule) init(
 		})
 		{
 			// if prevProcessedSlot is already in the previous Epoch, we can stop.
-			if prevProcessedSlot != nil && *prevProcessedSlot < officialEpochStart {
+			if prevProcessedSlot != nil && *prevProcessedSlot < start {
 				break
 			}
 		}
