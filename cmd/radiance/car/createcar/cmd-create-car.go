@@ -271,9 +271,15 @@ func run(c *cobra.Command, args []string) {
 					klog.Infof("Started processing DB #%d from slot %d", dbIdex, slotMeta.Slot)
 				}
 				if dbIdex != latestDB {
-					klog.Infof("Switched to DB #%d; started processing new DB from slot %d (prev: %d)", dbIdex, slotMeta.Slot, latestSlot)
+					msg := fmt.Sprintf("Switched to DB #%d; started processing new DB from slot %d", dbIdex, slotMeta.Slot)
+					if latestSlot > 0 {
+						msg += fmt.Sprintf(" (prev: %d)", latestSlot)
+					} else {
+						msg += fmt.Sprintf(" (no prev)")
+					}
+					klog.Info(msg)
 					// TODO: warn if we skipped slots
-					if slotMeta.Slot > latestSlot+1 {
+					if latestSlot > 0 && slotMeta.Slot > latestSlot+1 {
 						klog.Warningf(
 							"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from slot %d",
 							latestSlot+1,

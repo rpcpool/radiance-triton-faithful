@@ -422,6 +422,7 @@ func (schedule *TraversalSchedule) init(
 			}
 		}
 	}()
+	officialEpochStart, _ := slotedges.CalcEpochLimits(epoch)
 
 	activationSlot := cloneUint64Ptr(nextRevisionActivationSlot)
 	var prevProcessedSlot *uint64
@@ -432,6 +433,21 @@ func (schedule *TraversalSchedule) init(
 	for hi := range reversedHandles {
 		handle := reversedHandles[hi]
 
+		logErrorf := func(format string, args ...interface{}) {
+			// format error and add context (db name)
+			klog.Error(
+				fmt.Errorf(format, args...),
+				fmt.Sprintf(" current_db=%s", handle.DB.DB.Name()),
+			)
+		}
+		logInfof := func(format string, args ...interface{}) {
+			// format error and add context (db name)
+			klog.Info(
+				fmt.Sprintf(format, args...),
+				fmt.Sprintf(" current_db=%s", handle.DB.DB.Name()),
+			)
+		}
+
 		var lastOfPReviousDB *uint64
 		if hi > 0 {
 			prevSlots := schedule.schedule[hi-1].slots
@@ -440,12 +456,13 @@ func (schedule *TraversalSchedule) init(
 			}
 		}
 		klog.Infof(
-			("wanted=%d, prevProcessed=%v; lastOfPreviousDB=%v; starting with db %s"),
+			"Starting with db %s, wanted=%d, prevProcessed=%v; lastOfPreviousDB=%v;",
+			handle.DB.DB.Name(),
 			wanted,
 			uint64OrNil(prevProcessedSlot),
 			uint64OrNil(lastOfPReviousDB),
-			handle.DB.DB.Name(),
 		)
+
 		var slots []uint64
 		opts := getReadOptions()
 		defer putReadOptions(opts)
@@ -458,12 +475,15 @@ func (schedule *TraversalSchedule) init(
 			key := MakeSlotKey(wanted)
 			iter.Seek(key[:])
 			if !iter.Valid() {
-				klog.Errorf(("seeked to slot %d but got invalid (not found); this probably means that you need to add the next DB too."), wanted)
+				logErrorf(
+					"seeked to slot %d but got invalid (not found): moving down to next DB",
+					wanted,
+				)
 				break slotLoop
 			}
 			gotRoot, ok := ParseSlotKey(iter.Key().Data())
 			if !ok {
-				return fmt.Errorf("Invalid slot key: %x", iter.Key().Data())
+				return fmt.Errorf("found invalid slot key in DB %s: %x", handle.DB.DB.Name(), iter.Key().Data())
 			}
 			if prevProcessedSlot != nil && gotRoot == *prevProcessedSlot {
 				// slots = append(slots, wanted)
@@ -472,26 +492,35 @@ func (schedule *TraversalSchedule) init(
 					iter.Prev()
 					gotRoot, ok = ParseSlotKey(iter.Key().Data())
 					if !ok {
-						return fmt.Errorf("Invalid slot key: %x", iter.Key().Data())
+						return fmt.Errorf("found invalid slot key in DB %s: %x", handle.DB.DB.Name(), iter.Key().Data())
 					}
 				}
 			}
+
 			if start != 0 && gotRoot < start-1 {
 				// inlude one more slot
-				klog.Infof(("reached slot %d which is lower than the low bound %d (OK)"), gotRoot, start)
+				logInfof(
+					"reached slot %d which is lower than the low bound %d (OK)",
+					gotRoot,
+					start,
+				)
 				break slotLoop
 			}
 			// Check what we got (might be a different gotRoot than what we wanted):
 			recovered := false
 			if gotRoot != wanted {
-				klog.Errorf(("seeked to slot %d but got slot %d; trying recovery..."), wanted, gotRoot)
+				logErrorf(
+					"seeked to slot %d but got slot %d; trying to recover missing root...",
+					wanted,
+					gotRoot,
+				)
 				// The wanted root was not found in the CfRoot; if it exists in the CfMeta, we can still use it.
 				_, err := handle.DB.GetSlotMeta(wanted)
 				if err == nil {
-					klog.Infof(("recovery worked: recovered the wanted slot %d"), wanted)
+					logInfof("recovery successful: recovered the wanted slot %d", wanted)
 					recovered = true
 					if _, ok := recoveries[wanted]; ok {
-						klog.Infof(
+						logInfof(
 							"Root slot already recovered: %d",
 							wanted,
 						)
@@ -499,21 +528,32 @@ func (schedule *TraversalSchedule) init(
 					recoveries[wanted] = struct{}{}
 					gotRoot = wanted
 				} else {
-					// recovery failed.
+					// recovery failed:
 					if prevProcessedSlot != nil {
 						// We really wanted that slot because it was the parent of the previous slot.
 						// If we can't find it, we can't continue.
-						return fmt.Errorf("Failed to get meta for slot %d (parent of %d): %s", wanted, err, *prevProcessedSlot)
+						return fmt.Errorf(
+							"db %q: failed to get meta for slot %d (parent of %d): %s",
+							handle.DB.DB.Name(),
+							wanted,
+							*prevProcessedSlot,
+							err,
+						)
 					}
 					// This is fine because the first wanted slot was a guess, and it wasn't found (and the DB returned a different slot).
 					// We can just use the slot we got.
-					klog.Infof(("recovery failed: wanted %d (which doesn't exist), but can only get %d"), wanted, gotRoot)
+					logInfof(
+						"recovery failed: wanted %d (which doesn't exist), but can only get %d",
+						wanted,
+						gotRoot,
+					)
 					if wanted == stop && gotRoot < stop {
 						// We wanted the last slot, but we got a smaller slot.
 						// This means that we can't be sure the DB is complete.
 						// We can't continue.
 						return fmt.Errorf(
-							"Wanted to get slot %d but got %d instead, which is smaller than the stop slot %d (and we can't be sure the DB is complete)",
+							"db %q: wanted to get slot %d but got %d instead, which is smaller than the stop slot %d (and we can't be sure the DB is complete)",
+							handle.DB.DB.Name(),
 							wanted,
 							gotRoot,
 							stop,
@@ -525,10 +565,10 @@ func (schedule *TraversalSchedule) init(
 			// now get the meta for this slot
 			meta, err := handle.DB.GetSlotMeta(gotRoot)
 			if err != nil {
-				return fmt.Errorf("Failed to get meta for slot %d: %s", gotRoot, err)
+				return fmt.Errorf("db %q: failed to get meta for slot %d: %s", handle.DB.DB.Name(), gotRoot, err)
 			}
 			if meta == nil {
-				return fmt.Errorf("Meta for slot %d is nil", gotRoot)
+				return fmt.Errorf("db %q: meta for slot %d is nil", handle.DB.DB.Name(), gotRoot)
 			}
 
 			// If we have a shred revision, we need to check if the slot is in the range of the next revision activation.
@@ -550,7 +590,7 @@ func (schedule *TraversalSchedule) init(
 				if err == nil {
 					// Success!
 				} else {
-					klog.Warningf(
+					logInfof(
 						"recovered slot %d from DB %s is missing data (moving down to another DB): %s",
 						gotRoot,
 						handle.DB.DB.Name(),
@@ -566,7 +606,7 @@ func (schedule *TraversalSchedule) init(
 				// Has all the data except for what's the parent slot.
 				// We skip adding it here, and hope we will find it in the next DB.
 				// We also assume that if meta.ParentSlot == math.MaxUint64, then this is the end of the DB.
-				break
+				break slotLoop
 			}
 			slots = append(slots, gotRoot)
 			if gotRoot == 0 {
@@ -578,6 +618,12 @@ func (schedule *TraversalSchedule) init(
 			// }
 
 			prevProcessedSlot = &gotRoot
+			{
+				// if prevProcessedSlot is already in the previous Epoch, we can stop.
+				if prevProcessedSlot != nil && *prevProcessedSlot < officialEpochStart {
+					break slotLoop
+				}
+			}
 			wanted = meta.ParentSlot
 		}
 
@@ -591,6 +637,12 @@ func (schedule *TraversalSchedule) init(
 			handle: handle,
 			slots:  unique(slots),
 		})
+		{
+			// if prevProcessedSlot is already in the previous Epoch, we can stop.
+			if prevProcessedSlot != nil && *prevProcessedSlot < officialEpochStart {
+				break
+			}
+		}
 	}
 	// reverse the schedule so that it is in ascending order
 	reverse(schedule.schedule)
