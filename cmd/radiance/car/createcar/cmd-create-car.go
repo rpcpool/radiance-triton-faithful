@@ -220,12 +220,6 @@ func run(c *cobra.Command, args []string) {
 		)
 	}
 
-	if *flagCheckOnly {
-		klog.Infof("Check only; exiting")
-		time.Sleep(1 * time.Second)
-		os.Exit(0)
-	}
-
 	// write slots to a file {epoch}.slots.txt
 	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
 	klog.Infof("Saving slot list to file: %s", slotsFilepath)
@@ -239,6 +233,12 @@ func run(c *cobra.Command, args []string) {
 		if err != nil {
 			klog.Exitf("Failed to write slot to slots file: %s", err)
 		}
+	}
+
+	if *flagCheckOnly {
+		klog.Infof("Check only; exiting")
+		time.Sleep(1 * time.Second)
+		os.Exit(0)
 	}
 
 	multi, err := NewMultistage(
