@@ -113,7 +113,7 @@ func run(c *cobra.Command, args []string) {
 	}
 	if ok, err := fileExists(finalCARFilepath); err != nil {
 		klog.Exitf("Failed to check if CAR file exists: %s", err)
-	} else if ok {
+	} else if ok && !*flagCheckOnly {
 		klog.Exitf("CAR file already exists: %s", finalCARFilepath)
 	}
 

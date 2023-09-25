@@ -419,8 +419,15 @@ func (schedule *TraversalSchedule) init(
 	defer func() {
 		if len(recoveries) > 0 {
 			klog.Infof("Recovered slot roots:")
+			recoveredSorted := make([]uint64, 0, len(recoveries))
 			for k := range recoveries {
-				klog.Infof("  - %d", k)
+				recoveredSorted = append(recoveredSorted, k)
+			}
+			sort.Slice(recoveredSorted, func(i, j int) bool {
+				return recoveredSorted[i] < recoveredSorted[j]
+			})
+			for _, slot := range recoveredSorted {
+				klog.Infof("  - %d", slot)
 			}
 		}
 	}()
@@ -433,6 +440,7 @@ func (schedule *TraversalSchedule) init(
 	wanted := stop // NOTE: this `stop` is a guess; if not found, we will get the next bigger slot
 	for hi := range reversedHandles {
 		handle := reversedHandles[hi]
+		isLastDB := hi == len(reversedHandles)-1
 
 		logErrorf := func(format string, args ...interface{}) {
 			// format error and add context (db name)
@@ -485,15 +493,15 @@ func (schedule *TraversalSchedule) init(
 			}
 
 			if !iter.Valid() || gotRoot != wanted {
-				notFound_NotEvenGreater := !iter.Valid()                      // not found at all
-				notFound_ButGotDifferent := iter.Valid() && gotRoot != wanted // found a different slot
-				if notFound_NotEvenGreater {
+				notMatch_none := !iter.Valid()                                // not found at all
+				notMatch_butGotDifferent := iter.Valid() && gotRoot != wanted // found a different slot
+				if notMatch_none {
 					logErrorf(
 						"seeked to slot %d but got invalid (not found, and there is no greater one either): will try to recover",
 						wanted,
 					)
 				}
-				if notFound_ButGotDifferent {
+				if notMatch_butGotDifferent {
 					logErrorf(
 						"seeked to slot %d but got slot %d instead: will try to recover",
 						wanted,
@@ -518,48 +526,74 @@ func (schedule *TraversalSchedule) init(
 						if thisWasParentOfPrevious := prevProcessedSlot != nil; thisWasParentOfPrevious {
 							// We really wanted that slot because it was the parent of the previous slot.
 							// If we can't find it, we can't continue.
-							return fmt.Errorf(
-								"db %q: failed to recover slot %d (parent of %d): %s",
-								handle.DB.DB.Name(),
-								wanted,
-								*prevProcessedSlot,
-								err,
-							)
+							if isLastDB {
+								return fmt.Errorf(
+									"db %q: failed to recover slot %d (parent of %d): %s",
+									handle.DB.DB.Name(),
+									wanted,
+									*prevProcessedSlot,
+									err,
+								)
+							} else {
+								// We can't continue with this DB, but we can continue with the next DB.
+								// We will try to recover the slot from the next DB.
+								logInfof(
+									"can't continue with this DB; will try to get slot %d from the next DB",
+									wanted,
+								)
+								break slotLoop
+							}
 						}
 						if wanted == stop {
-							// We wanted the last slot (the biggest slot in the epoch), but we got a smaller slot or nothing at all.
-							// This means that we can't be sure the DB is complete.
-							// We can't continue. You need to include another DB that contains the last slot of this epoch or greater.
-							return fmt.Errorf(
-								"db %q: failed to recover slot %d (last slot in epoch %d), and we can't continue because we can't be sure the DB is complete: %s",
-								handle.DB.DB.Name(),
-								wanted,
-								epoch,
-								err,
-							)
-						}
-						{
-							// TODO: what is the case where we can't recover the slot, but we can continue?
-							if notFound_NotEvenGreater {
-								// We wanted a slot, but it wasn't found, and there is no greater slot either.
-								logInfof(
-									"recovery failed: wanted %d (which doesn't exist), and there is no greater slot either",
-									wanted,
-								)
+							if notMatch_butGotDifferent {
+								if gotRoot < wanted {
+									// We wanted the last slot (the biggest slot in the epoch), but we got a smaller slot.
+									// This means that we can't be sure the DB is complete.
+									// We can't continue. You need to include another DB that contains the last slot of this epoch or greater.
+									return fmt.Errorf(
+										"db %q: failed to recover slot %d (last slot in epoch %d), and we can't continue because we can't be sure the DB is complete: %s",
+										handle.DB.DB.Name(),
+										wanted,
+										epoch,
+										err,
+									)
+								}
+								if gotRoot > wanted {
+									// Ok, we wanted the last slot (the biggest slot in the epoch), but we got a bigger slot.
+									// This is OK, we can continue.
+									goto weAreGoodWithWhatWeGot
+								}
 							}
-							if notFound_ButGotDifferent {
-								// We wanted a slot, but we got a different slot.
-								logInfof(
-									"recovery failed: wanted %d (which doesn't exist), but can only get %d",
-									wanted,
-									gotRoot,
-								)
+							if notMatch_none {
+								if isLastDB {
+									// We wanted the last slot (the biggest slot in the epoch), but we got nothing at all.
+									// This means that we can't be sure the DB is complete.
+									// We can't continue. You need to include another DB that contains the last slot of this epoch or greater.
+									return fmt.Errorf(
+										"db %q: failed to recover slot %d (last slot in epoch %d), and we can't continue because we can't be sure the DB is complete: %s",
+										handle.DB.DB.Name(),
+										wanted,
+										epoch,
+										err,
+									)
+								} else {
+									// We wanted the last slot (the biggest slot in the epoch), but we got nothing at all.
+									// This means that we can't be sure the DB is complete.
+									// We can't continue with this DB, but we can continue with the next DB.
+									// We will try to recover the slot from the next DB.
+									logInfof(
+										"can't continue with this DB; will try to get slot %d from the next DB",
+										wanted,
+									)
+									break slotLoop
+								}
 							}
-							panic("failed slot recovery; contact developer for this edge case")
 						}
+						panic("failed slot recovery; contact developer for this edge case")
 					}
 				}
 			}
+		weAreGoodWithWhatWeGot:
 
 			if prevProcessedSlot != nil && gotRoot == *prevProcessedSlot {
 				// slots = append(slots, wanted)
