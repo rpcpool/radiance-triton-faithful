@@ -477,9 +477,17 @@ func (schedule *TraversalSchedule) init(
 			iter.Seek(key[:])
 			if !iter.Valid() {
 				logErrorf(
-					"seeked to slot %d but got invalid (not found): moving down to next DB",
+					"seeked to slot %d but got invalid (not found, and there is no greater one either): moving down to next DB",
 					wanted,
 				)
+				{
+					_, err := handle.DB.GetSlotMeta(wanted)
+					if err == nil {
+						logInfof("even though we couldn't find the slot root, we found the meta for slot %d", wanted)
+					} else {
+						logInfof("we couldn't find the slot root, and we couldn't find the meta for slot %d either", wanted)
+					}
+				}
 				break slotLoop
 			}
 			gotRoot, ok := ParseSlotKey(iter.Key().Data())
