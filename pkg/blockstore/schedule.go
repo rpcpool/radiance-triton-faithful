@@ -667,6 +667,9 @@ func canRecoverSlot(db *WalkHandle, slot uint64) (bool, error) {
 	if meta == nil {
 		return false, fmt.Errorf("db %q: meta for slot %d is nil", db.DB.DB.Name(), slot)
 	}
+	if meta.ParentSlot == math.MaxUint64 {
+		return false, fmt.Errorf("db %q: meta for slot %d has invalid parent slot %d (=MaxUint64)", db.DB.DB.Name(), slot, meta.ParentSlot)
+	}
 	_, err = db.DB.GetEntries(meta, db.shredRevision)
 	if err != nil {
 		return false, fmt.Errorf("db %q: failed to get entries for slot %d: %s", db.DB.DB.Name(), slot, err)
