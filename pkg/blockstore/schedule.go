@@ -419,6 +419,7 @@ func (schedule *TraversalSchedule) init(
 		for _, h := range reversedHandles {
 			msg := fmt.Sprintf("db %q:", h.DB.DB.Name())
 			{
+				// NOTE: this is the lowest slot that is rooted, but it doesn't mean that it's the lowest slot that has meta and entries.
 				slot, err := h.DB.MinRoot()
 				if err != nil {
 					msg += fmt.Sprintf(" MinRoot=error(%s)", err)

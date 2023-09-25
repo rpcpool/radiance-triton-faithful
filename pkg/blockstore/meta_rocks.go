@@ -93,7 +93,7 @@ func canRecover(db *DB, iter *grocksdb.Iterator) (uint64, bool) {
 	if !ok {
 		return 0, false
 	}
-	meta, err := db.GetSlotMeta(slot)
+	meta, err := ParseBincode[SlotMeta](iter.Value().Data())
 	if err != nil {
 		return 0, false
 	}
