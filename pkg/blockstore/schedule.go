@@ -415,6 +415,45 @@ func (schedule *TraversalSchedule) init(
 	copy(reversedHandles, handles)
 	reverse(reversedHandles)
 
+	{
+		for _, h := range reversedHandles {
+			msg := fmt.Sprintf("db %q:", h.DB.DB.Name())
+			{
+				slot, err := h.DB.MinRoot()
+				if err != nil {
+					msg += fmt.Sprintf(" MinRoot=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MinRoot=%d", slot)
+				}
+			}
+			{
+				slot, err := h.DB.MinMaybeRootedValidSlot()
+				if err != nil {
+					msg += fmt.Sprintf(" MinMaybeRootedValidSlot=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MinMaybeRootedValidSlot=%d", slot)
+				}
+			}
+			{
+				slot, err := h.DB.MaxRoot()
+				if err != nil {
+					msg += fmt.Sprintf(" MaxRoot=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MaxRoot=%d", slot)
+				}
+			}
+			{
+				slot, err := h.DB.MaxMaybeRootedValidSlot()
+				if err != nil {
+					msg += fmt.Sprintf(" MaxMaybeRootedValidSlot=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MaxMaybeRootedValidSlot=%d", slot)
+				}
+			}
+			klog.Info(msg)
+		}
+	}
+
 	recoveries := make(map[uint64]struct{})
 	defer func() {
 		if len(recoveries) > 0 {
