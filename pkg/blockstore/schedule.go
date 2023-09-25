@@ -481,11 +481,11 @@ func (schedule *TraversalSchedule) init(
 					wanted,
 				)
 				{
-					_, err := handle.DB.GetSlotMeta(wanted)
-					if err == nil {
-						logInfof("even though we couldn't find the slot root, we found the meta for slot %d", wanted)
+					ok, err := canRecoverSlot(handle, wanted)
+					if ok {
+						logInfof("even though we couldn't find the slot root, the slot %d is recoverable", wanted)
 					} else {
-						logInfof("we couldn't find the slot root, and we couldn't find the meta for slot %d either", wanted)
+						logInfof("we couldn't find the slot root, and the slot %d is not recoverable: %s", wanted, err)
 					}
 				}
 				break slotLoop
@@ -656,6 +656,22 @@ func (schedule *TraversalSchedule) init(
 	// reverse the schedule so that it is in ascending order
 	reverse(schedule.schedule)
 	return nil
+}
+
+func canRecoverSlot(db *WalkHandle, slot uint64) (bool, error) {
+	// can get meta, and can get entries
+	meta, err := db.DB.GetSlotMeta(slot)
+	if err != nil {
+		return false, fmt.Errorf("db %q: failed to get meta for slot %d: %s", db.DB.DB.Name(), slot, err)
+	}
+	if meta == nil {
+		return false, fmt.Errorf("db %q: meta for slot %d is nil", db.DB.DB.Name(), slot)
+	}
+	_, err = db.DB.GetEntries(meta, db.shredRevision)
+	if err != nil {
+		return false, fmt.Errorf("db %q: failed to get entries for slot %d: %s", db.DB.DB.Name(), slot, err)
+	}
+	return true, nil
 }
 
 func reverse[T any](x []T) {
