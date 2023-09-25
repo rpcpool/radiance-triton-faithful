@@ -475,30 +475,98 @@ func (schedule *TraversalSchedule) init(
 		for {
 			key := MakeSlotKey(wanted)
 			iter.Seek(key[:])
-			if !iter.Valid() {
-				logErrorf(
-					"seeked to slot %d but got invalid (not found, and there is no greater one either): moving down to next DB",
-					wanted,
-				)
+			var gotRoot uint64
+			if iter.Valid() {
+				got, ok := ParseSlotKey(iter.Key().Data())
+				if !ok {
+					return fmt.Errorf("found invalid slot key in DB %s: %x", handle.DB.DB.Name(), iter.Key().Data())
+				}
+				gotRoot = got
+			}
+
+			if !iter.Valid() || gotRoot != wanted {
+				notFound_NotEvenGreater := !iter.Valid()                      // not found at all
+				notFound_ButGotDifferent := iter.Valid() && gotRoot != wanted // found a different slot
+				if notFound_NotEvenGreater {
+					logErrorf(
+						"seeked to slot %d but got invalid (not found, and there is no greater one either): will try to recover",
+						wanted,
+					)
+				}
+				if notFound_ButGotDifferent {
+					logErrorf(
+						"seeked to slot %d but got slot %d instead: will try to recover",
+						wanted,
+						gotRoot,
+					)
+				}
 				{
+					// The wanted root was not found in the CfRoot; check if we can recover it from the CfMeta and it has all the data.
 					ok, err := canRecoverSlot(handle, wanted)
 					if ok {
-						logInfof("even though we couldn't find the slot root, the slot %d is recoverable", wanted)
+						logInfof("recovery successful: even though slot %d is not rooted, we were able to recover it because it has the meta and all data", wanted)
+						if _, ok := recoveries[wanted]; ok {
+							logInfof(
+								"root slot already recovered: %d",
+								wanted,
+							)
+						}
+						recoveries[wanted] = struct{}{}
+						gotRoot = wanted
 					} else {
-						logInfof("we couldn't find the slot root, and the slot %d is not recoverable: %s", wanted, err)
+						logInfof("failed to recover slot %d: %s", wanted, err)
+						if thisWasParentOfPrevious := prevProcessedSlot != nil; thisWasParentOfPrevious {
+							// We really wanted that slot because it was the parent of the previous slot.
+							// If we can't find it, we can't continue.
+							return fmt.Errorf(
+								"db %q: failed to recover slot %d (parent of %d): %s",
+								handle.DB.DB.Name(),
+								wanted,
+								*prevProcessedSlot,
+								err,
+							)
+						}
+						if wanted == stop {
+							// We wanted the last slot (the biggest slot in the epoch), but we got a smaller slot or nothing at all.
+							// This means that we can't be sure the DB is complete.
+							// We can't continue. You need to include another DB that contains the last slot of this epoch or greater.
+							return fmt.Errorf(
+								"db %q: failed to recover slot %d (last slot in epoch %d), and we can't continue because we can't be sure the DB is complete: %s",
+								handle.DB.DB.Name(),
+								wanted,
+								epoch,
+								err,
+							)
+						}
+						{
+							// TODO: what is the case where we can't recover the slot, but we can continue?
+							if notFound_NotEvenGreater {
+								// We wanted a slot, but it wasn't found, and there is no greater slot either.
+								logInfof(
+									"recovery failed: wanted %d (which doesn't exist), and there is no greater slot either",
+									wanted,
+								)
+							}
+							if notFound_ButGotDifferent {
+								// We wanted a slot, but we got a different slot.
+								logInfof(
+									"recovery failed: wanted %d (which doesn't exist), but can only get %d",
+									wanted,
+									gotRoot,
+								)
+							}
+							panic("failed slot recovery; contact developer for this edge case")
+						}
 					}
 				}
-				break slotLoop
 			}
-			gotRoot, ok := ParseSlotKey(iter.Key().Data())
-			if !ok {
-				return fmt.Errorf("found invalid slot key in DB %s: %x", handle.DB.DB.Name(), iter.Key().Data())
-			}
+
 			if prevProcessedSlot != nil && gotRoot == *prevProcessedSlot {
 				// slots = append(slots, wanted)
 				{
-					// go back one slot
+					// go back one slot so we won't re-process this slot again.
 					iter.Prev()
+					var ok bool
 					gotRoot, ok = ParseSlotKey(iter.Key().Data())
 					if !ok {
 						return fmt.Errorf("found invalid slot key in DB %s: %x", handle.DB.DB.Name(), iter.Key().Data())
@@ -512,63 +580,6 @@ func (schedule *TraversalSchedule) init(
 					gotRoot,
 					start,
 				)
-				// TODO: why exit here?
-				// break slotLoop
-			}
-			// Check what we got (might be a different gotRoot than what we wanted):
-			recovered := false
-			if gotRoot != wanted {
-				logErrorf(
-					"seeked to slot %d but got slot %d; trying to recover missing root...",
-					wanted,
-					gotRoot,
-				)
-				// The wanted root was not found in the CfRoot; if it exists in the CfMeta, we can still use it.
-				_, err := handle.DB.GetSlotMeta(wanted)
-				if err == nil {
-					logInfof("recovery successful: recovered the wanted slot %d", wanted)
-					recovered = true
-					if _, ok := recoveries[wanted]; ok {
-						logInfof(
-							"Root slot already recovered: %d",
-							wanted,
-						)
-					}
-					recoveries[wanted] = struct{}{}
-					gotRoot = wanted
-				} else {
-					// recovery failed:
-					if thisWasParentOfPrevious := prevProcessedSlot != nil; thisWasParentOfPrevious {
-						// We really wanted that slot because it was the parent of the previous slot.
-						// If we can't find it, we can't continue.
-						return fmt.Errorf(
-							"db %q: failed to get meta for slot %d (parent of %d): %s",
-							handle.DB.DB.Name(),
-							wanted,
-							*prevProcessedSlot,
-							err,
-						)
-					}
-					// This is fine because the first wanted slot was a guess, and it wasn't found (and the DB returned a different slot).
-					// We can just use the slot we got.
-					logInfof(
-						"recovery failed: wanted %d (which doesn't exist), but can only get %d",
-						wanted,
-						gotRoot,
-					)
-					if wanted == stop && gotRoot < stop {
-						// We wanted the last slot (the biggest slot in the epoch), but we got a smaller slot.
-						// This means that we can't be sure the DB is complete.
-						// We can't continue.
-						return fmt.Errorf(
-							"db %q: wanted to get slot %d but got %d instead, which is smaller than the stop slot %d (and we can't be sure the DB is complete)",
-							handle.DB.DB.Name(),
-							wanted,
-							gotRoot,
-							stop,
-						)
-					}
-				}
 			}
 
 			// now get the meta for this slot
@@ -587,29 +598,6 @@ func (schedule *TraversalSchedule) init(
 				activationSlot = nil
 			}
 
-			if recovered {
-				// If the slot was "recovered", let's check that we have all the data for it.
-				// If we have missing data, we can't use it. Which means it might be the end of the DB.
-				//
-				// From pkg/blockstore/blockwalk_rocks.go:65-68:
-				// The Solana validator periodically prunes old slots to keep database space bounded.
-				// Therefore, the first (few) slots might have valid meta entries but missing data shreds.
-				// To work around this, we simply start at the lowest meta and iterate until we find a complete entry.
-				_, err = handle.DB.GetEntries(meta, shredRevision)
-				if err == nil {
-					// Success!
-				} else {
-					logInfof(
-						"recovered slot %d from DB %s is missing data (moving down to another DB): %s",
-						gotRoot,
-						handle.DB.DB.Name(),
-						err,
-					)
-					// return fmt.Errorf("Failed to get entries for slot %d: %s", gotRoot, err)
-					// Move to next DB.
-					break slotLoop
-				}
-			}
 			// fmt.Printf("slot=%d has %d entries; prev=%d\n", gotRoot, len(entries), meta.ParentSlot)
 			if meta.ParentSlot == math.MaxUint64 {
 				// Has all the data except for what's the parent slot.
@@ -667,9 +655,21 @@ func canRecoverSlot(db *WalkHandle, slot uint64) (bool, error) {
 	if meta == nil {
 		return false, fmt.Errorf("db %q: meta for slot %d is nil", db.DB.DB.Name(), slot)
 	}
+
+	// Has all the data except for what's the parent slot.
+	// We skip adding it here, and hope we will find it in the next DB.
+	// We also assume that if meta.ParentSlot == math.MaxUint64, then this is the end of the DB.
 	if meta.ParentSlot == math.MaxUint64 {
 		return false, fmt.Errorf("db %q: meta for slot %d has invalid parent slot %d (=MaxUint64)", db.DB.DB.Name(), slot, meta.ParentSlot)
 	}
+
+	// If the slot was "recovered", let's check that we have all the data for it.
+	// If we have missing data, we can't use it. Which means it might be the end of the DB.
+	//
+	// From pkg/blockstore/blockwalk_rocks.go:65-68:
+	// The Solana validator periodically prunes old slots to keep database space bounded.
+	// Therefore, the first (few) slots might have valid meta entries but missing data shreds.
+	// To work around this, we simply start at the lowest meta and iterate until we find a complete entry.
 	_, err = db.DB.GetEntries(meta, db.shredRevision)
 	if err != nil {
 		return false, fmt.Errorf("db %q: failed to get entries for slot %d: %s", db.DB.DB.Name(), slot, err)
