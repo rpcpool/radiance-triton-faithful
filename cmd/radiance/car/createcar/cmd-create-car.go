@@ -182,6 +182,22 @@ func run(c *cobra.Command, args []string) {
 		officialEpochStart,
 		officialEpochStop,
 	)
+
+	// write slots to a file {epoch}.slots.txt
+	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
+	klog.Infof("Saving slot list to file: %s", slotsFilepath)
+	slotsFile, err := os.Create(slotsFilepath)
+	if err != nil {
+		klog.Exitf("Failed to create slot list file: %s", err)
+	}
+	defer slotsFile.Close()
+	for _, slot := range slots {
+		_, err := slotsFile.WriteString(fmt.Sprintf("%d\n", slot))
+		if err != nil {
+			klog.Exitf("Failed to write slot to slots file: %s", err)
+		}
+	}
+
 	klog.Info("---")
 	if *flagRequireFullEpoch {
 		err := schedule.SatisfiesEpochEdges(epoch)
@@ -218,21 +234,6 @@ func run(c *cobra.Command, args []string) {
 			"Limiting slots to %d",
 			limitSlots,
 		)
-	}
-
-	// write slots to a file {epoch}.slots.txt
-	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
-	klog.Infof("Saving slot list to file: %s", slotsFilepath)
-	slotsFile, err := os.Create(slotsFilepath)
-	if err != nil {
-		klog.Exitf("Failed to create slot list file: %s", err)
-	}
-	defer slotsFile.Close()
-	for _, slot := range slots {
-		_, err := slotsFile.WriteString(fmt.Sprintf("%d\n", slot))
-		if err != nil {
-			klog.Exitf("Failed to write slot to slots file: %s", err)
-		}
 	}
 
 	if *flagCheckOnly {
