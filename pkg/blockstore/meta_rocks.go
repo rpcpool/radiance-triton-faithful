@@ -3,6 +3,7 @@
 package blockstore
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 
@@ -44,6 +45,82 @@ func (d *DB) MinRoot() (uint64, error) {
 		return 0, fmt.Errorf("invalid key in root cf")
 	}
 	return slot, nil
+}
+
+func (d *DB) MinShred() (uint64, uint64, shred.Shred, error) {
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	iter := d.DB.NewIteratorCF(opts, d.CfDataShred)
+	defer iter.Close()
+	iter.SeekToFirst()
+	for iter.Valid() {
+		var curSlot, index uint64
+		valid := iter.Valid()
+		if valid {
+			key := iter.Key().Data()
+			if len(key) != 16 {
+				iter.Next()
+				continue
+			}
+			curSlot = binary.BigEndian.Uint64(key)
+			index = binary.BigEndian.Uint64(key[8:])
+		}
+		s, err := parseShredAnyVersion(iter.Value().Data())
+		if err != nil {
+			iter.Next()
+			continue
+		}
+		if !s.Ok() {
+			iter.Next()
+			continue
+		}
+		return curSlot, index, s, nil
+	}
+	return 0, 0, shred.Shred{}, ErrNotFound
+}
+
+func (d *DB) MaxShred() (uint64, uint64, shred.Shred, error) {
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(false)
+	opts.SetFillCache(false)
+	iter := d.DB.NewIteratorCF(opts, d.CfDataShred)
+	defer iter.Close()
+	iter.SeekToLast()
+	for iter.Valid() {
+		var curSlot, index uint64
+		valid := iter.Valid()
+		if valid {
+			key := iter.Key().Data()
+			if len(key) != 16 {
+				iter.Prev()
+				continue
+			}
+			curSlot = binary.BigEndian.Uint64(key)
+			index = binary.BigEndian.Uint64(key[8:])
+		}
+		s, err := parseShredAnyVersion(iter.Value().Data())
+		if err != nil {
+			iter.Prev()
+			continue
+		}
+		if !s.Ok() {
+			iter.Prev()
+			continue
+		}
+		return curSlot, index, s, nil
+	}
+	return 0, 0, shred.Shred{}, ErrNotFound
+}
+
+func parseShredAnyVersion(data []byte) (shred.Shred, error) {
+	for _, revision := range []int{shred.RevisionV1, shred.RevisionV2} {
+		s := shred.NewShredFromSerialized(data, revision)
+		if s.Ok() {
+			return s, nil
+		}
+	}
+	return shred.Shred{}, fmt.Errorf("failed to deserialize shred")
 }
 
 // MaxMaybeRootedValidSlot returns the last valid slot, either rooted or having meta and entries.

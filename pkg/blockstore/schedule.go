@@ -451,6 +451,22 @@ func (schedule *TraversalSchedule) init(
 					msg += fmt.Sprintf(" MaxMaybeRootedValidSlot=%d", slot)
 				}
 			}
+			{
+				shredSlot, shredIndex, _, err := h.DB.MinShred()
+				if err != nil {
+					msg += fmt.Sprintf(" MinShred=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MinShred=%d/%d", shredSlot, shredIndex)
+				}
+			}
+			{
+				shredSlot, shredIndex, _, err := h.DB.MaxShred()
+				if err != nil {
+					msg += fmt.Sprintf(" MaxShred=error(%s)", err)
+				} else {
+					msg += fmt.Sprintf(" MaxShred=%d/%d", shredSlot, shredIndex)
+				}
+			}
 			klog.Info(msg)
 		}
 	}
