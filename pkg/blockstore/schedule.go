@@ -328,7 +328,7 @@ func NewSchedule(
 	}
 
 	schedule := new(TraversalSchedule)
-	err := schedule.init(epoch, startFrom, stopAt, handles, shredRevision, activationSlot)
+	err := schedule.init(epoch, startFrom, stopAt, requireFullEpoch, handles, shredRevision, activationSlot)
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +404,7 @@ func (schedule *TraversalSchedule) init(
 	epoch uint64,
 	start,
 	stop uint64,
+	requireFullEpoch bool,
 	handles []*WalkHandle,
 	shredRevision int,
 	nextRevisionActivationSlot *uint64,
@@ -583,6 +584,9 @@ func (schedule *TraversalSchedule) init(
 							// We really wanted that slot because it was the parent of the previous slot.
 							// If we can't find it, we can't continue.
 							if isLastDB {
+								if !requireFullEpoch {
+									break slotLoop
+								}
 								return fmt.Errorf(
 									"db %q: failed to recover slot %d (parent of %d): %s",
 									handle.DB.DB.Name(),

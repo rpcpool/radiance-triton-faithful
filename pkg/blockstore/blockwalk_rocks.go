@@ -69,6 +69,7 @@ func getLowestCompletedSlot(d *DB, shredRevision int, nextRevisionActivationSlot
 	const maxTries = 32
 
 	activationSlot := cloneUint64Ptr(nextRevisionActivationSlot)
+	var lastError error
 	for i := 0; iter.Valid() && i < maxTries; i++ {
 		slot, ok := ParseSlotKey(iter.Key().Data())
 		if !ok {
@@ -94,10 +95,12 @@ func getLowestCompletedSlot(d *DB, shredRevision int, nextRevisionActivationSlot
 		if _, err = d.GetEntries(meta, shredRevision); err == nil {
 			// Success!
 			return slot, nil
+		} else {
+			lastError = fmt.Errorf("getLowestCompletedSlot: failed to get entries for slot %d: %w", slot, err)
 		}
 
 		iter.Next()
 	}
 
-	return 0, fmt.Errorf("failed to find a valid complete slot in DB: %s", d.DB.Name())
+	return 0, fmt.Errorf("failed to find a valid complete slot in DB: %s; last error: %w", d.DB.Name(), lastError)
 }
