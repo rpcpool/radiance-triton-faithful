@@ -12,7 +12,7 @@ import (
 	"github.com/linxGnu/grocksdb"
 )
 
-func FormatTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+func MakeTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	key := make([]byte, 80)
 	// the first 8 bytes are empty; fill them with zeroes
 	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})

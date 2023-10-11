@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/spf13/cobra"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/iostats"
+	"go.firedancer.io/radiance/pkg/slotedges"
 	"go.firedancer.io/radiance/pkg/versioninfo"
 	"gopkg.in/yaml.v2"
 	"k8s.io/klog/v2"
@@ -47,7 +49,8 @@ var (
 	flagLimitSlots                      = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
 	flagSkipHash                        = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
 	flagShredRevision                   = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
-	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot")
+	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
+	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 )
 
 func init() {
@@ -71,10 +74,10 @@ func init() {
 }
 
 func run(c *cobra.Command, args []string) {
-	start := time.Now()
+	startedAt := time.Now()
 
 	defer func() {
-		timeTaken := time.Since(start)
+		timeTaken := time.Since(startedAt)
 		klog.Infof("Time taken: %s", timeTaken)
 	}()
 	numWorkers := *flagWorkers
@@ -101,32 +104,147 @@ func run(c *cobra.Command, args []string) {
 		*flagNextShredRevisionActivationSlot,
 	)
 
+	if *flagRequireFullEpoch && *flagLimitSlots > 0 {
+		klog.Exitf("Cannot use both --require-full-epoch and --limit-slots")
+	}
+
+	if finalCARFilepath == "" {
+		klog.Exitf("Output CAR filepath is required")
+	}
+	if ok, err := fileExists(finalCARFilepath); err != nil {
+		klog.Exitf("Failed to check if CAR file exists: %s", err)
+	} else if ok && !*flagCheckOnly {
+		klog.Exitf("CAR file already exists: %s", finalCARFilepath)
+	}
+
+	officialEpochStart, officialEpochStop := slotedges.CalcEpochLimits(epoch)
+	if *flagRequireFullEpoch {
+		klog.Infof(
+			"Epoch %d limits: %d to %d",
+			epoch,
+			officialEpochStart,
+			officialEpochStop,
+		)
+	}
+
 	// Open blockstores
 	dbPaths := *flagDBs
-	handles := make([]blockstore.WalkHandle, len(*flagDBs))
+	handles := make([]*blockstore.WalkHandle, len(*flagDBs))
 	for i := range handles {
 		var err error
+		handles[i] = &blockstore.WalkHandle{}
 		handles[i].DB, err = blockstore.OpenReadOnly(dbPaths[i])
 		if err != nil {
 			klog.Exitf("Failed to open blockstore at %s: %s", dbPaths[i], err)
 		}
 	}
 
-	// Create new walker object
-	walker, err := blockstore.NewBlockWalkWithNextShredRevisionActivationSlot(
+	klog.Infof("Calculating traversal schedule...")
+	schedule, err := blockstore.NewSchedule(
+		epoch,
+		*flagRequireFullEpoch,
 		handles,
 		*flagShredRevision,
 		*flagNextShredRevisionActivationSlot,
 	)
 	if err != nil {
-		klog.Exitf("Failed to create multi-DB iterator: %s", err)
+		panic(err)
 	}
-	defer walker.Close()
+	defer schedule.Close()
+	klog.Infof("Traversal schedule:")
+
+	// Print the slots range in each DB:
+	err = schedule.Each(
+		c.Context(),
+		func(dbIndex int, db *blockstore.WalkHandle, slots []uint64) error {
+			if len(slots) == 0 {
+				return nil
+			}
+			klog.Infof("DB %d: slot %d - slot %d", dbIndex, slots[0], slots[len(slots)-1])
+			return nil
+		},
+	)
+	if err != nil {
+		panic(err)
+	}
+	klog.Info("---")
+
+	slots := schedule.Slots()
+	if len(slots) == 0 {
+		klog.Exitf("No slots to process")
+	}
+	klog.Infof("Total slots to process: %d", len(slots))
+	klog.Infof("First slot in schedule: %d", slots[0])
+	klog.Infof("Last slot in schedule: %d", slots[len(slots)-1])
+	klog.Infof(
+		"Epoch %d limits: %d to %d",
+		epoch,
+		officialEpochStart,
+		officialEpochStop,
+	)
+
+	// write slots to a file {epoch}.slots.txt
+	slotsFilepath := filepath.Join(filepath.Dir(finalCARFilepath), fmt.Sprintf("%d.slots.txt", epoch))
+	klog.Infof("Saving slot list to file: %s", slotsFilepath)
+	slotsFile, err := os.Create(slotsFilepath)
+	if err != nil {
+		klog.Exitf("Failed to create slot list file: %s", err)
+	}
+	defer slotsFile.Close()
+	for _, slot := range slots {
+		_, err := slotsFile.WriteString(fmt.Sprintf("%d\n", slot))
+		if err != nil {
+			klog.Exitf("Failed to write slot to slots file: %s", err)
+		}
+	}
+
+	klog.Info("---")
+	if *flagRequireFullEpoch {
+		err := schedule.SatisfiesEpochEdges(epoch)
+		if err != nil {
+			klog.Exitf("Schedule does not satisfy epoch %d: %s", epoch, err)
+		}
+		klog.Infof("Schedule satisfies epoch %d", epoch)
+	}
+	klog.Info("---")
+
+	totalSlotsToProcess := uint64(len(slots))
+	if !*flagRequireFullEpoch {
+		first, last := slots[0], slots[len(slots)-1]
+		klog.Infof(
+			"NOT REQUIRING FULL EPOCH; will process available slots only [%d:%d] (~%d slots)",
+			first, last,
+			// NOTE: there might be gaps in the data (as we are considering the min/max of the provided DBs),
+			// so this is not a reliable estimate.
+			totalSlotsToProcess,
+		)
+	} else {
+		klog.Infof(
+			"Will process slots only in the %d epoch range [%d:%d] (discarding slots outside)",
+			epoch,
+			officialEpochStart,
+			officialEpochStop,
+		)
+	}
+
+	limitSlots := *flagLimitSlots
+	if limitSlots > 0 && limitSlots < totalSlotsToProcess {
+		totalSlotsToProcess = limitSlots
+		klog.Infof(
+			"Limiting slots to %d",
+			limitSlots,
+		)
+	}
+
+	if *flagCheckOnly {
+		klog.Infof("Check only; exiting")
+		time.Sleep(1 * time.Second)
+		os.Exit(0)
+	}
 
 	multi, err := NewMultistage(
 		finalCARFilepath,
 		numWorkers,
-		walker,
 	)
 	if err != nil {
 		panic(err)
@@ -135,74 +253,94 @@ func run(c *cobra.Command, args []string) {
 	hadFirstSlot := false
 	latestSlot := uint64(0)
 	latestDB := int(0) // 0 is the first DB
-	callback := func(slotMeta *blockstore.SlotMeta, latestDBIndex int) error {
-		if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
-			if !hadFirstSlot {
-				hadFirstSlot = true
-				klog.Infof("Started processing DB #%d from slot %d", latestDBIndex, slotMeta.Slot)
+
+	iter := schedule.NewIterator(limitSlots)
+
+	err = iter.Iterate(
+		c.Context(),
+		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
+			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
+				return nil
 			}
-			if latestDBIndex != latestDB {
-				klog.Infof("Switched to DB #%d; started processing new DB from slot %d (prev: %d)", latestDBIndex, slotMeta.Slot, latestSlot)
-				// TODO: warn if we skipped slots
-				if slotMeta.Slot > latestSlot+1 {
-					klog.Warningf(
-						"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from slot %d",
-						latestSlot+1,
-						slotMeta.Slot-1,
-						latestSlot,
-						slotMeta.Slot,
-					)
+			slotMeta, err := h.DB.GetSlotMeta(slot)
+			if err != nil {
+				return fmt.Errorf("failed to get slot meta for slot %d: %w", slot, err)
+			}
+			if slotMeta.Slot > latestSlot || slotMeta.Slot == 0 {
+				if !hadFirstSlot {
+					hadFirstSlot = true
+					klog.Infof("Started processing DB #%d from slot %d", dbIdex, slotMeta.Slot)
+				}
+				if dbIdex != latestDB {
+					msg := fmt.Sprintf("Switched to DB #%d; started processing new DB from slot %d", dbIdex, slotMeta.Slot)
+					if latestSlot > 0 {
+						msg += fmt.Sprintf(" (prev: %d)", latestSlot)
+					} else {
+						msg += fmt.Sprintf(" (no prev)")
+					}
+					klog.Info(msg)
+					// TODO: warn if we skipped slots
+					if latestSlot > 0 && slotMeta.Slot > latestSlot+1 {
+						klog.Warningf(
+							"Detected skipped slots %d to %d after DB switch (last slot of previous DB: %d); started processing new DB from slot %d",
+							latestSlot+1,
+							slotMeta.Slot-1,
+							latestSlot,
+							slotMeta.Slot,
+						)
+					}
+				}
+				latestSlot = slotMeta.Slot
+				latestDB = dbIdex
+			} else if slotMeta.Slot < latestSlot {
+				if dbIdex == latestDB {
+					panic(fmt.Errorf("slot %d is out of order (previous processed slot was: %d)", slotMeta.Slot, latestSlot))
+				} else {
+					// TODO: remove
+					// we switched to another DB; print warning and return
+					// klog.Infof("New DB; slot %d was supposedly already processed (previous processed slot was: %d); skipping", slotMeta.Slot, latestSlot)
+					return nil
+				}
+			} else {
+				// slotMeta.Slot == latestSlot
+				if slotMeta.Slot != 0 && dbIdex == latestDB {
+					panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
+				} else {
+					// we switched to another DB; print warning and return
+					// klog.Infof("New DB; slot %d is already processed; skipping", slotMeta.Slot)
+					return nil
 				}
 			}
-			latestSlot = slotMeta.Slot
-			latestDB = latestDBIndex
-		} else if slotMeta.Slot < latestSlot {
-			if latestDBIndex == latestDB {
-				panic(fmt.Errorf("slot %d is out of order (previous processed slot was: %d)", slotMeta.Slot, latestSlot))
-			} else {
-				// TODO: remove
-				// we switched to another DB; print warning and return
-				// klog.Infof("New DB; slot %d was supposedly already processed (previous processed slot was: %d); skipping", slotMeta.Slot, latestSlot)
-				return nil
+			err = multi.OnSlotFromDB(h, slotMeta)
+			if err != nil {
+				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 			}
-		} else {
-			// slotMeta.Slot == latestSlot
-			if slotMeta.Slot != 0 && latestDBIndex == latestDB {
-				panic(fmt.Errorf("slot %d is already processed", slotMeta.Slot))
-			} else {
-				// we switched to another DB; print warning and return
-				// klog.Infof("New DB; slot %d is already processed; skipping", slotMeta.Slot)
-				return nil
-			}
-		}
-		err = multi.OnSlotFromDB(slotMeta)
-		if err != nil {
-			panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
-		}
-		return nil
-	}
-	wrk, err := NewIterator(
-		epoch,
-		walker,
-		*flagRequireFullEpoch,
-		*flagLimitSlots,
-		callback,
-	)
-	if err != nil {
-		klog.Exitf("Failed to init cargen: %s", err)
-	}
-
-	ctx := c.Context()
-	if err = wrk.Run(ctx); err != nil {
-		klog.Exitf("FATAL: %s", err)
-	}
-	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
-	epochCID, slotRecap, err := multi.FinalizeDAG(epoch)
+			return nil
+		})
 	if err != nil {
 		panic(err)
 	}
+
+	klog.Infof("Finalizing DAG in the CAR file for epoch %d, at path: %s", epoch, finalCARFilepath)
+	epochCID, slotRecap, gotSlots, err := multi.FinalizeDAG(epoch)
+	if err != nil {
+		panic(err)
+	}
+	{
+		calculatedSchedule := removeIf(slots, func(block uint64) bool {
+			return slotedges.CalcEpochForSlot(block) != epoch
+		})
+		processedSlots := removeIf(gotSlots, func(block uint64) bool {
+			return slotedges.CalcEpochForSlot(block) != epoch
+		})
+
+		_, _, areDifferent := compare(calculatedSchedule, processedSlots)
+		if areDifferent {
+			klog.Exitf("The calculated schedule and the processed slots (that were written to the CAR file) are different")
+		}
+	}
 	klog.Infof("Root of the DAG (Epoch CID): %s", epochCID)
-	tookCarCreation := time.Since(start)
+	tookCarCreation := time.Since(startedAt)
 	klog.Infof("Done. Completed CAR file generation in %s", tookCarCreation)
 	type Recap struct {
 		Epoch                 uint64                 `yaml:"epoch"`
@@ -280,7 +418,7 @@ func run(c *cobra.Command, args []string) {
 
 	{
 		klog.Info("---")
-		timeTakenUntilAfterCARFinalization := time.Since(start)
+		timeTakenUntilAfterCARFinalization := time.Since(startedAt)
 		numBytesReadFromDisk, err := iostats.GetDiskReadBytes()
 		if err != nil {
 			panic(err)
@@ -328,7 +466,7 @@ func run(c *cobra.Command, args []string) {
 		}
 		thisCarRecap.CarFileSizeBytes = carFileSize
 	}
-	thisCarRecap.TookTotal = time.Since(start)
+	thisCarRecap.TookTotal = time.Since(startedAt)
 
 	{
 		// save the recap to a file, in the format {epoch}.recap.yaml
@@ -346,7 +484,7 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	timeTaken := time.Since(start)
+	timeTaken := time.Since(startedAt)
 	klog.Info("---")
 	klog.Infof("Total time taken: %s", timeTaken)
 
@@ -415,4 +553,86 @@ func getDirSize(path string) (uint64, error) {
 		return nil
 	})
 	return size, err
+}
+
+func removeIf(slice []uint64, remover func(uint64) bool) []uint64 {
+	var out []uint64
+	for _, item := range slice {
+		if !remover(item) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func uniqueBlocks(blocks []uint64) []uint64 {
+	// sort, then remove duplicates:
+	sort.Slice(blocks, func(i, j int) bool {
+		return blocks[i] < blocks[j]
+	})
+	var out []uint64
+	for i := range blocks {
+		if i == 0 || blocks[i] != blocks[i-1] {
+			out = append(out, blocks[i])
+		}
+	}
+	return out
+}
+
+func compare(scheduleList []uint64, carList []uint64) ([]uint64, []uint64, bool) {
+	scheduleList = uniqueBlocks(scheduleList)
+	carList = uniqueBlocks(carList)
+
+	hasDiff := false
+	// blocks in schedule but not in car:
+	var removed []uint64
+	for _, block := range scheduleList {
+		if !contains(carList, block) {
+			removed = append(removed, block)
+		}
+	}
+	if len(removed) > 0 {
+		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("schedule"), red("car"))
+		for _, block := range removed {
+			fmt.Println(block)
+		}
+		hasDiff = true
+	}
+
+	// blocks in car but not in schedule:
+	var added []uint64
+	for _, block := range carList {
+		if !contains(scheduleList, block) {
+			added = append(added, block)
+		}
+	}
+	if len(added) > 0 {
+		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("car"), red("schedule"))
+		for _, block := range added {
+			fmt.Println(block)
+		}
+		hasDiff = true
+	}
+
+	if !hasDiff {
+		fmt.Println("✅ No differences between schedule and car")
+	}
+	return added, removed, hasDiff
+}
+
+func contains(slots []uint64, slot uint64) bool {
+	i := SearchUint64(slots, slot)
+	return i < len(slots) && slots[i] == slot
+}
+
+func SearchUint64(a []uint64, x uint64) int {
+	return sort.Search(len(a), func(i int) bool { return a[i] >= x })
+}
+
+func red(s string) string {
+	return "\033[31m" + s + "\033[0m"
+}
+
+func green(s string) string {
+	return "\033[32m" + s + "\033[0m"
 }

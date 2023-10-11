@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -23,7 +22,6 @@ import (
 	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
 	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
 	concurrently "github.com/tejzpr/ordered-concurrently/v3"
-	"go.firedancer.io/radiance/cmd/radiance/car/createcar/registry"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
@@ -35,20 +33,20 @@ import (
 type blockWorker struct {
 	slotMeta  *radianceblockstore.SlotMeta
 	CIDSetter func(slot uint64, cid []byte) error
-	walker    *radianceblockstore.BlockWalk
+	handle    *blockstore.WalkHandle
 	done      func(numTx uint64)
 }
 
 func newBlockWorker(
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
-	walker *radianceblockstore.BlockWalk,
+	h *blockstore.WalkHandle,
 	done func(uint64),
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:  slotMeta,
 		CIDSetter: CIDSetter,
-		walker:    walker,
+		handle:    h,
 		done:      done,
 	}
 }
@@ -66,7 +64,7 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 		w.done(numTx)
 	}()
 	slot := w.slotMeta.Slot
-	entries, err := w.walker.Entries(w.slotMeta)
+	entries, err := w.handle.Entries(w.slotMeta)
 	if err != nil {
 		return err
 	}
@@ -77,22 +75,22 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	}
 	numTx = uint64(len(transactionMetaKeys))
 
-	metas, err := w.walker.TransactionMetas(transactionMetaKeys...)
+	metas, err := w.handle.DB.GetTransactionMetas(transactionMetaKeys...)
 	if err != nil {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
 
-	blockTime, err := w.walker.BlockTime(slot)
+	blockTime, err := w.handle.DB.GetBlockTime(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get block time for slot %d: %w", slot, err)
 	}
 
-	blockHeight, err := w.walker.BlockHeight(slot)
+	blockHeight, err := w.handle.DB.GetBlockHeight(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get block height for slot %d: %w", slot, err)
 	}
 
-	rewards, err := w.walker.Rewards(slot)
+	rewards, err := w.handle.DB.GetRewards(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
@@ -157,15 +155,72 @@ type Multistage struct {
 
 	storageCar *carHandle
 
-	reg *registry.Registry
+	reg *InMemorySlotRegistry
 
 	workerInputChan     chan concurrently.WorkFunction
 	waitExecuted        *sync.WaitGroup
 	waitResultsReceived sync.WaitGroup
 	numReceivedAtomic   *atomic.Int64
 	numTxAtomic         *atomic.Uint64
-	walker              *radianceblockstore.BlockWalk
 	numWrittenObjects   *atomic.Uint64
+}
+
+type InMemorySlotRegistry struct {
+	mu       sync.RWMutex
+	registry map[uint64]SlotEntry
+}
+
+type SlotEntry struct {
+	Slot uint64
+	CID  []byte
+}
+
+// func(slot uint64, cid []byte) error
+func (r *InMemorySlotRegistry) SetCID(slot uint64, cid []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.registry[slot] = SlotEntry{
+		Slot: slot,
+		CID:  clone(cid),
+	}
+	return nil
+}
+
+func clone(b []byte) []byte {
+	if b == nil {
+		return nil
+	}
+	c := make([]byte, len(b))
+	copy(c, b)
+	return c
+}
+
+// GetAll
+func (r *InMemorySlotRegistry) GetAll() ([]SlotEntry, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]SlotEntry, 0, len(r.registry))
+	for i := range r.registry {
+		out = append(out, r.registry[i])
+	}
+	return out, nil
+}
+
+func (r *InMemorySlotRegistry) GetCID(slot uint64) (*cid.Cid, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	entry, ok := r.registry[slot]
+	if !ok {
+		return nil, fmt.Errorf("slot %d not found", slot)
+	}
+	l, c, err := cid.CidFromBytes(entry.CID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse CID: %w", err)
+	}
+	if l != 36 {
+		return nil, fmt.Errorf("CID length mismatch: expected %d, got %d", 36, l)
+	}
+	return &c, nil
 }
 
 // - [x] in stage 1, we create a CAR file for all the slots
@@ -174,7 +229,6 @@ type Multistage struct {
 func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
-	walker *radianceblockstore.BlockWalk,
 ) (*Multistage, error) {
 	if numWorkers == 0 {
 		numWorkers = uint(runtime.NumCPU())
@@ -183,19 +237,10 @@ func NewMultistage(
 		carFilepath:       finalCARFilepath,
 		workerInputChan:   make(chan concurrently.WorkFunction, numWorkers),
 		waitExecuted:      new(sync.WaitGroup), // used to wait for results
-		walker:            walker,
 		numReceivedAtomic: new(atomic.Int64),
 		numTxAtomic:       new(atomic.Uint64),
 		numWrittenObjects: new(atomic.Uint64),
 	}
-
-	cw.walker.SetOnBeforePop(func() error {
-		// wait for the current batch processing to finish before closing the DB and opening the next one
-		cw.waitExecuted.Wait()
-		// reset the group
-		cw.waitExecuted = new(sync.WaitGroup)
-		return nil
-	})
 
 	resultStream := concurrently.Process(
 		context.Background(),
@@ -211,28 +256,17 @@ func NewMultistage(
 				panic(resValue)
 			case *memSubtreeStore:
 				subtree := resValue
+
+				if previousSlot == 0 && subtree.slot > 0 {
+					// Cold start: the first we process must have also the parent slot available.
+				}
 				if previousSlot != 0 && subtree.slot > 0 && subtree.parentSlot != previousSlot {
 					// Check that the parent slot is the previous slot that we processed.
-
-					dbName, err := ms.walker.SlotExistsInAnyDB(subtree.parentSlot)
-					notFoundInAnyDB := err != nil
-					dbMessage := ""
-					if notFoundInAnyDB {
-						dbMessage = fmt.Sprintf("parent slot not found in ANY of the provided DBs")
-					} else {
-						dbMessage = fmt.Sprintf("but found in DB %q; this is a bug, please contact developer", dbName)
-					}
-					parentSlotMeta, err := ms.walker.GetSlotMetaFromAnyDB(subtree.parentSlot)
-					if err == nil {
-						dbMessage += fmt.Sprintf(" (parent slot meta: %+v)", parentSlotMeta)
-					}
-
 					panic(fmt.Errorf(
-						"slot %d has parent slot %d, but previous processed slot is %d (%s)",
+						"slot %d has parent slot %d, but previous processed slot is %d",
 						subtree.slot,
 						subtree.parentSlot,
 						previousSlot,
-						dbMessage,
 					))
 				}
 				if subtree.slot > previousSlot || subtree.slot == 0 {
@@ -267,11 +301,8 @@ func NewMultistage(
 		}
 
 		{
-			registryFilepath := filepath.Join(finalCARFilepath + ".registry.bin")
-			cidLen := 36
-			reg, err := registry.New(registryFilepath, cidLen)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create registry: %w", err)
+			reg := &InMemorySlotRegistry{
+				registry: make(map[uint64]SlotEntry),
 			}
 			cw.reg = reg
 		}
@@ -323,6 +354,7 @@ func (cw *Multistage) getConcurrency() int {
 // OnSlotFromDB is called when a block is received.
 // This MUST be called in order of the slot number.
 func (cw *Multistage) OnSlotFromDB(
+	h *blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
 ) error {
 	cw.waitExecuted.Add(1)
@@ -331,7 +363,7 @@ func (cw *Multistage) OnSlotFromDB(
 	cw.workerInputChan <- newBlockWorker(
 		slotMeta,
 		cw.reg.SetCID,
-		cw.walker,
+		h,
 		func(numTx uint64) {
 			cw.numTxAtomic.Add(numTx)
 			cw.waitExecuted.Done()
@@ -656,7 +688,7 @@ type MultistageRecap struct {
 // the CAR file with the root of the DAG (the Epoch object CID).
 func (cw *Multistage) FinalizeDAG(
 	epoch uint64,
-) (datamodel.Link, *MultistageRecap, error) {
+) (datamodel.Link, *MultistageRecap, []uint64, error) {
 	{
 		// wait for all slots to be registered
 		klog.Infof("Waiting for all slots to be registered...")
@@ -670,12 +702,12 @@ func (cw *Multistage) FinalizeDAG(
 	}
 	allRegistered, err := cw.reg.GetAll()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get all links: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get all links: %w", err)
 	}
 	allSlots := make([]uint64, 0, len(allRegistered))
 	for _, slot := range allRegistered {
-		if slot.CID == nil || len(slot.CID) == 0 || !slot.Status.Is(registry.SlotStatusIncluded) {
-			continue
+		if slot.CID == nil || len(slot.CID) == 0 {
+			panic(fmt.Errorf("slot %d has no CID", slot.Slot))
 		}
 		allSlots = append(allSlots, slot.Slot)
 	}
@@ -689,7 +721,7 @@ func (cw *Multistage) FinalizeDAG(
 	klog.Infof("Completing DAG for epoch %d...", epoch)
 	epochRootLink, err := cw.constructEpoch(epoch, schedule)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to construct epoch: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to construct epoch: %w", err)
 	}
 	klog.Infof("Completed DAG for epoch %d", epoch)
 
@@ -703,10 +735,11 @@ func (cw *Multistage) FinalizeDAG(
 	klog.Infof("Closing CAR...")
 	err = cw.Close()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to close file: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to close file: %w", err)
 	}
 	klog.Infof("Closed CAR for epoch %d", epoch)
 
+	klog.Infof("CAR contains %d slots", len(allSlots))
 	klog.Infof("CAR contains %d transactions", cw.numTxAtomic.Load())
 	klog.Infof("CAR contains %d objects", cw.NumberOfWrittenObjects())
 
@@ -715,13 +748,12 @@ func (cw *Multistage) FinalizeDAG(
 		klog.Infof("Replacing root in CAR with CID of epoch %d", epoch)
 		err = cw.replaceRoot(epochCid)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to replace roots in file: %w", err)
+			return nil, nil, nil, fmt.Errorf("failed to replace roots in file: %w", err)
 		}
 		klog.Infof("Replaced root in CAR with CID of epoch %d", epoch)
 	}
 
-	cw.reg.Destroy()
-	return epochRootLink, slotRecap, err
+	return epochRootLink, slotRecap, allSlots, err
 }
 
 func (cw *Multistage) NumberOfTransactions() uint64 {

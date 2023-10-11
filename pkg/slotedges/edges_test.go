@@ -1,4 +1,4 @@
-package createcar
+package slotedges
 
 import (
 	"testing"
