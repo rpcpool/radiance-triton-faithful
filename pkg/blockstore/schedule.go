@@ -23,6 +23,23 @@ type TraversalSchedule struct {
 	schedule []DBtoSlots
 }
 
+func init() {
+	schedule := TraversalSchedule{}
+
+	schedule.schedule = append(schedule.schedule, DBtoSlots{
+		slots: []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9},
+	})
+
+	schedule.PruneHigherThan(5)
+
+	if len(schedule.schedule) != 1 {
+		panic("expected 1 DB")
+	}
+	if len(schedule.schedule[0].slots) != 5 {
+		panic("expected 5 slots")
+	}
+}
+
 type ScheduleIterator struct {
 	schedule *TraversalSchedule
 	limit    uint64
@@ -33,6 +50,21 @@ func (s TraversalSchedule) NewIterator(limit uint64) *ScheduleIterator {
 		schedule: &s,
 		limit:    limit,
 	}
+}
+
+func (s *TraversalSchedule) PruneHigherThan(slot uint64) {
+	for i := range s.schedule {
+		s.schedule[i].PruneHigherThan(slot)
+	}
+}
+
+func (s *TraversalSchedule) HasSlot(slot uint64) bool {
+	for _, db := range s.schedule {
+		if contains(db.slots, slot) {
+			return true
+		}
+	}
+	return false
 }
 
 // TraversalSchedule.Iterate iterates over the schedule.
@@ -207,6 +239,16 @@ func (s TraversalSchedule) SatisfiesEpochEdges(epoch uint64) error {
 type DBtoSlots struct {
 	handle *WalkHandle
 	slots  []uint64
+}
+
+func (d *DBtoSlots) PruneHigherThan(slot uint64) {
+	var newSlots []uint64
+	for _, s := range d.slots {
+		if s <= slot {
+			newSlots = append(newSlots, s)
+		}
+	}
+	d.slots = newSlots
 }
 
 // DBtoSlots.Slots returns the slots in ascending order.

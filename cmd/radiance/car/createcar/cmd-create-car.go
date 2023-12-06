@@ -51,6 +51,7 @@ var (
 	flagShredRevision                   = flags.Int("shred-revision", 2, "Shred revision to use (2 = latest)")
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
+	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
 )
 
 func init() {
@@ -169,6 +170,24 @@ func run(c *cobra.Command, args []string) {
 	}
 	klog.Info("---")
 
+	if *flagRequireFullEpoch {
+		err := schedule.SatisfiesEpochEdges(epoch)
+		if err != nil {
+			klog.Exitf("Schedule does not satisfy epoch %d: %s", epoch, err)
+		}
+		klog.Infof("Schedule satisfies epoch %d", epoch)
+	}
+	klog.Info("---")
+
+	if *flagStopAtSlot > 0 {
+		if schedule.HasSlot(*flagStopAtSlot) {
+			klog.Infof("You specified --stop-at-slot=%d; once we reach and process this slot, we will exit.", *flagStopAtSlot)
+			schedule.PruneHigherThan(*flagStopAtSlot)
+		} else {
+			klog.Exitf("You specified --stop-at-slot=%d, but this slot is not in the schedule.", *flagStopAtSlot)
+		}
+	}
+
 	slots := schedule.Slots()
 	if len(slots) == 0 {
 		klog.Exitf("No slots to process")
@@ -198,14 +217,6 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	klog.Info("---")
-	if *flagRequireFullEpoch {
-		err := schedule.SatisfiesEpochEdges(epoch)
-		if err != nil {
-			klog.Exitf("Schedule does not satisfy epoch %d: %s", epoch, err)
-		}
-		klog.Infof("Schedule satisfies epoch %d", epoch)
-	}
 	klog.Info("---")
 
 	totalSlotsToProcess := uint64(len(slots))
@@ -592,7 +603,7 @@ func compare(scheduleList []uint64, carList []uint64) ([]uint64, []uint64, bool)
 		}
 	}
 	if len(removed) > 0 {
-		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("schedule"), red("car"))
+		fmt.Printf("\n🚫 blocks in %s but not in %s:\n", green("schedule"), red("car"))
 		for _, block := range removed {
 			fmt.Println(block)
 		}
@@ -607,7 +618,7 @@ func compare(scheduleList []uint64, carList []uint64) ([]uint64, []uint64, bool)
 		}
 	}
 	if len(added) > 0 {
-		fmt.Printf("🚫 blocks in %s but not in %s:\n", green("car"), red("schedule"))
+		fmt.Printf("\n🚫 blocks in %s but not in %s:\n", green("car"), red("schedule"))
 		for _, block := range added {
 			fmt.Println(block)
 		}
@@ -615,7 +626,7 @@ func compare(scheduleList []uint64, carList []uint64) ([]uint64, []uint64, bool)
 	}
 
 	if !hasDiff {
-		fmt.Println("✅ No differences between schedule and car")
+		fmt.Println("\n✅ No differences between schedule and car")
 	}
 	return added, removed, hasDiff
 }
