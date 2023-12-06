@@ -18,6 +18,7 @@ func TestReadGenesisFromArchive(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, time.Date(2020, time.March, 16, 14, 29, 0, 0, time.UTC), genesis.CreationTime)
+	assert.Equal(t, int64(1584368940), genesis.CreationTime.Unix())
 	assert.Equal(t, []BuiltinProgram{
 		{
 			Key:    "solana_config_program",
