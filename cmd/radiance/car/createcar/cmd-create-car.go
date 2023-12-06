@@ -181,7 +181,7 @@ func run(c *cobra.Command, args []string) {
 
 	if *flagStopAtSlot > 0 {
 		if schedule.HasSlot(*flagStopAtSlot) {
-			klog.Infof("You specified --stop-at-slot=%d; once we reach and process this slot, we will exit.", *flagStopAtSlot)
+			klog.Infof("You specified --stop-at-slot=%d; once we reach and process this slot (inclusive), we will exit. Removing all higher slots from schedule.", *flagStopAtSlot)
 			schedule.PruneHigherThan(*flagStopAtSlot)
 		} else {
 			klog.Exitf("You specified --stop-at-slot=%d, but this slot is not in the schedule.", *flagStopAtSlot)
