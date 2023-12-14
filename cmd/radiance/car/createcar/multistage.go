@@ -149,6 +149,15 @@ func (ms *memSubtreeStore) pushBlock(block firecar.Block) {
 	ms.blocks = append(ms.blocks, block)
 }
 
+func (ms *memSubtreeStore) getBlock(c cid.Cid) (*firecar.Block, bool) {
+	for _, block := range ms.blocks {
+		if block.Cid.Equals(c) {
+			return &block, true
+		}
+	}
+	return nil, false
+}
+
 type Multistage struct {
 	settingConcurrency uint
 	carFilepath        string

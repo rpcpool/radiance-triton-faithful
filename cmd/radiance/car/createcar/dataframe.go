@@ -132,6 +132,15 @@ func CreateAndStoreFrames(
 	firstFrameSizeLimit int,
 ) (*ipldbindcode.DataFrame, error) {
 	frameSizeLimit := MaxObjectSize - 300
+	return CreateAndStoreFramesWithFrameSize(store, data, firstFrameSizeLimit, frameSizeLimit)
+}
+
+func CreateAndStoreFramesWithFrameSize(
+	store func(node datamodel.Node) (datamodel.Link, error),
+	data []byte,
+	firstFrameSizeLimit int,
+	frameSizeLimit int,
+) (*ipldbindcode.DataFrame, error) {
 	frames, err := CreateDataFrames(data, firstFrameSizeLimit, frameSizeLimit)
 	if err != nil {
 		return nil, err
