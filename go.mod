@@ -37,7 +37,7 @@ require (
 	github.com/segmentio/textio v1.2.0
 	github.com/slok/go-http-metrics v0.10.0
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/spf13/cobra v1.6.1
+	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.8.4
 	github.com/tejzpr/ordered-concurrently/v3 v3.0.1
 	github.com/twmb/franz-go v1.12.1
