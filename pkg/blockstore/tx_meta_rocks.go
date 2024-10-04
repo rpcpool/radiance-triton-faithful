@@ -53,7 +53,11 @@ type TransactionStatusMetaWithRaw struct {
 	Raw []byte
 }
 
-func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRaw, error) {
+func (d *DB) GetTransactionMetas(
+	allowNotFound bool,
+	onNotFound func(key []byte),
+	keys ...[]byte,
+) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
 	defer putReadOptions(opts)
 	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
@@ -63,10 +67,63 @@ func (d *DB) GetTransactionMetas(keys ...[]byte) ([]*TransactionStatusMetaWithRa
 	defer got.Destroy()
 	result := make([]*TransactionStatusMetaWithRaw, len(keys))
 	for i := range keys {
-		// if got[i] == nil || got[i].Size() == 0 {
-		// 	continue
-		// }
-		// TODO: what if got[i] is empty?
+		if got[i] == nil || got[i].Size() == 0 {
+			if !allowNotFound {
+				return nil, fmt.Errorf("failed to get tx meta: key not found %v", keys[i])
+			}
+		}
+
+		metaBytes := got[i].Data()
+		obj := &TransactionStatusMetaWithRaw{
+			Raw: cloneBytes(metaBytes),
+		}
+		result[i] = obj
+
+		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+			obj.Raw = nil
+		})
+	}
+	return result, nil
+}
+
+func (d *DB) GetTransactionMetasWithFiller(
+	allowNotFound bool,
+	fillerFuncs []func(key []byte) []byte,
+	keys ...[]byte,
+) ([]*TransactionStatusMetaWithRaw, error) {
+	opts := getReadOptions()
+	defer putReadOptions(opts)
+	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tx meta: %w", err)
+	}
+	defer got.Destroy()
+	result := make([]*TransactionStatusMetaWithRaw, len(keys))
+	for i := range keys {
+		if got[i] == nil || got[i].Size() == 0 {
+			if len(fillerFuncs) > 0 {
+				for _, fillerFunc := range fillerFuncs {
+					filler := fillerFunc(keys[i])
+					if filler != nil {
+						obj := &TransactionStatusMetaWithRaw{
+							Raw: cloneBytes(filler),
+						}
+						result[i] = obj
+						runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+							obj.Raw = nil
+						})
+						break
+					}
+				}
+			}
+		}
+		// TODO: what if got[i] is still empty?
+		if result[i] != nil {
+			continue
+		}
+		if !allowNotFound {
+			return nil, fmt.Errorf("failed to get tx meta: key not found %v", keys[i])
+		}
 
 		metaBytes := got[i].Data()
 		obj := &TransactionStatusMetaWithRaw{

@@ -43,3 +43,5 @@ test-full: install_compatible_golang_version build_rocksdb
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/build -lbz2" \
 	go1.20.5 test ./... -cover -count=1
+clear:
+	rm -rf facebook/rocksdb/build

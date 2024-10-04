@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,23 +32,29 @@ import (
 )
 
 type blockWorker struct {
-	slotMeta  *radianceblockstore.SlotMeta
-	CIDSetter func(slot uint64, cid []byte) error
-	handle    *blockstore.WalkHandle
-	done      func(numTx uint64)
+	slotMeta            *radianceblockstore.SlotMeta
+	CIDSetter           func(slot uint64, cid []byte) error
+	handle              *blockstore.WalkHandle
+	done                func(numTx uint64)
+	allowNotFoundTxMeta bool
+	notFoundMetaStats   *CountByDB
 }
 
 func newBlockWorker(
+	allowNotFoundTxMeta bool,
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
 	h *blockstore.WalkHandle,
 	done func(uint64),
+	notFoundMetaStats *CountByDB,
 ) *blockWorker {
 	return &blockWorker{
-		slotMeta:  slotMeta,
-		CIDSetter: CIDSetter,
-		handle:    h,
-		done:      done,
+		slotMeta:            slotMeta,
+		CIDSetter:           CIDSetter,
+		handle:              h,
+		done:                done,
+		allowNotFoundTxMeta: allowNotFoundTxMeta,
+		notFoundMetaStats:   notFoundMetaStats,
 	}
 }
 
@@ -58,7 +65,9 @@ func BlocktimeKey(slot uint64) []byte {
 }
 
 // The input type should implement the WorkFunction interface
-func (w blockWorker) Run(ctx context.Context) interface{} {
+func (w blockWorker) Run(
+	ctx context.Context,
+) interface{} {
 	var numTx uint64
 	defer func() {
 		w.done(numTx)
@@ -75,7 +84,14 @@ func (w blockWorker) Run(ctx context.Context) interface{} {
 	}
 	numTx = uint64(len(transactionMetaKeys))
 
-	metas, err := w.handle.DB.GetTransactionMetas(transactionMetaKeys...)
+	// TODO: specify other sources for transaction metas if they are not found in the DB.
+	metas, err := w.handle.DB.GetTransactionMetas(
+		w.allowNotFoundTxMeta,
+		func(key []byte) {
+			w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
+		},
+		transactionMetaKeys...,
+	)
 	if err != nil {
 		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
 	}
@@ -159,8 +175,9 @@ func (ms *memSubtreeStore) getBlock(c cid.Cid) (*firecar.Block, bool) {
 }
 
 type Multistage struct {
-	settingConcurrency uint
-	carFilepath        string
+	settingConcurrency  uint
+	carFilepath         string
+	allowNotFoundTxMeta bool
 
 	storageCar *carHandle
 
@@ -172,6 +189,8 @@ type Multistage struct {
 	numReceivedAtomic   *atomic.Int64
 	numTxAtomic         *atomic.Uint64
 	numWrittenObjects   *atomic.Uint64
+	sizeStats           *StatsSizeByKind
+	statsNotFoundMeta   *CountByDB
 }
 
 type InMemorySlotRegistry struct {
@@ -238,17 +257,21 @@ func (r *InMemorySlotRegistry) GetCID(slot uint64) (*cid.Cid, error) {
 func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
+	allowNotFoundTxMeta bool,
 ) (*Multistage, error) {
 	if numWorkers == 0 {
 		numWorkers = uint(runtime.NumCPU())
 	}
 	cw := &Multistage{
-		carFilepath:       finalCARFilepath,
-		workerInputChan:   make(chan concurrently.WorkFunction, numWorkers),
-		waitExecuted:      new(sync.WaitGroup), // used to wait for results
-		numReceivedAtomic: new(atomic.Int64),
-		numTxAtomic:       new(atomic.Uint64),
-		numWrittenObjects: new(atomic.Uint64),
+		carFilepath:         finalCARFilepath,
+		allowNotFoundTxMeta: allowNotFoundTxMeta,
+		workerInputChan:     make(chan concurrently.WorkFunction, numWorkers),
+		waitExecuted:        new(sync.WaitGroup), // used to wait for results
+		numReceivedAtomic:   new(atomic.Int64),
+		numTxAtomic:         new(atomic.Uint64),
+		numWrittenObjects:   new(atomic.Uint64),
+		sizeStats:           NewStatsSizeByKind(),
+		statsNotFoundMeta:   NewCountByDB(),
 	}
 
 	resultStream := concurrently.Process(
@@ -288,7 +311,7 @@ func NewMultistage(
 				}
 				// write the blocks to the CAR file:
 				for blockIndex, block := range subtree.blocks {
-					err := cw.storageCar.WriteBlock(block)
+					err := cw.WriteBlock(block)
 					if err != nil {
 						panic(fmt.Errorf("failed to write node #%d for slot %d: %w", blockIndex, subtree.slot, err))
 					}
@@ -317,7 +340,7 @@ func NewMultistage(
 		}
 
 		writableCar := new(carHandle)
-		err = writableCar.open(finalCARFilepath, cw.numWrittenObjects)
+		err = writableCar.open(finalCARFilepath, cw.numWrittenObjects, cw.sizeStats)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create writable CAR: %w", err)
 		}
@@ -338,6 +361,10 @@ func (cw *Multistage) Store(node datamodel.Node) (datamodel.Link, error) {
 		return nil, err
 	}
 	return cidlink.Link{Cid: block.Cid}, nil
+}
+
+func (cw *Multistage) WriteBlock(block firecar.Block) error {
+	return cw.storageCar.WriteBlock(block)
 }
 
 func (cw *Multistage) Close() error {
@@ -370,6 +397,7 @@ func (cw *Multistage) OnSlotFromDB(
 	cw.waitResultsReceived.Add(1)
 	cw.numReceivedAtomic.Add(1)
 	cw.workerInputChan <- newBlockWorker(
+		cw.allowNotFoundTxMeta,
 		slotMeta,
 		cw.reg.SetCID,
 		h,
@@ -377,6 +405,7 @@ func (cw *Multistage) OnSlotFromDB(
 			cw.numTxAtomic.Add(numTx)
 			cw.waitExecuted.Done()
 		},
+		cw.statsNotFoundMeta,
 	)
 	return nil
 }
@@ -691,6 +720,37 @@ type MultistageRecap struct {
 	FirstSlot              uint64
 	LastSlot               uint64
 	NumberOfWrittenObjects uint64
+	StatsBySize            KVSlice
+}
+
+type KVSlice []KV
+
+type KV struct {
+	Key string
+	Val uint64
+}
+
+func (kvs KVSlice) Len() int {
+	return len(kvs)
+}
+
+func (kvs KVSlice) Less(i, j int) bool {
+	return kvs[i].Key < kvs[j].Key
+}
+
+func (kvs KVSlice) Swap(i, j int) {
+	kvs[i], kvs[j] = kvs[j], kvs[i]
+}
+
+// yaml.Marshal(KVSlice)
+func (kvs KVSlice) MarshalYAML() (interface{}, error) {
+	sort.Sort(kvs)
+
+	out := make(map[string]uint64, len(kvs))
+	for _, kv := range kvs {
+		out[kv.Key] = kv.Val
+	}
+	return out, nil
 }
 
 // FinalizeDAG constructs the DAG for the given epoch and replaces the root of
@@ -739,6 +799,16 @@ func (cw *Multistage) FinalizeDAG(
 		FirstSlot:              allSlots[0],
 		LastSlot:               allSlots[len(allSlots)-1],
 		NumberOfWrittenObjects: cw.NumberOfWrittenObjects(),
+		StatsBySize: func() KVSlice {
+			mapping := cw.sizeStats.GetMap()
+			out := make(KVSlice, 0, len(mapping))
+			for kind, count := range mapping {
+				out = append(out, KV{Key: kind.String(), Val: count})
+			}
+			// sort by key
+			sort.Sort(out)
+			return out
+		}(),
 	}
 
 	klog.Infof("Closing CAR...")

@@ -52,6 +52,7 @@ var (
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
+	flagAllowMissingTxMeta              = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
 )
 
 func init() {
@@ -256,6 +257,7 @@ func run(c *cobra.Command, args []string) {
 	multi, err := NewMultistage(
 		finalCARFilepath,
 		numWorkers,
+		*flagAllowMissingTxMeta,
 	)
 	if err != nil {
 		panic(err)
@@ -369,6 +371,9 @@ func run(c *cobra.Command, args []string) {
 		NumBytesWrittenToDisk uint64                 `yaml:"num_bytes_written_to_disk"`
 		VersionInfo           map[string]interface{} `yaml:"version_info"`
 		Cmd                   string                 `yaml:"cmd"`
+		SizesByKind           KVSlice                `yaml:"sizes_by_kind"`
+		NumTotalMissingTxMeta uint64                 `yaml:"num_total_missing_tx_meta"`
+		NumMissingTxMetaByDB  map[string]uint64      `yaml:"num_missing_tx_meta_by_db"`
 	}
 
 	thisCarRecap := Recap{
@@ -380,6 +385,16 @@ func run(c *cobra.Command, args []string) {
 		FirstSlot:       slotRecap.FirstSlot,
 		LastSlot:        slotRecap.LastSlot,
 		TookCarCreation: tookCarCreation,
+		SizesByKind:     slotRecap.StatsBySize,
+	}
+	{
+		totalMissingTxMeta := multi.statsNotFoundMeta.Total()
+		thisCarRecap.NumTotalMissingTxMeta = totalMissingTxMeta
+
+		thisCarRecap.NumMissingTxMetaByDB = make(map[string]uint64)
+		for dbPath, numMissing := range multi.statsNotFoundMeta.GetMap() {
+			thisCarRecap.NumMissingTxMetaByDB[dbPath] = numMissing
+		}
 	}
 	{
 		versionInfo, ok := versioninfo.GetBuildSettings()
