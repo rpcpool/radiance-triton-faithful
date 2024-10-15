@@ -86,9 +86,11 @@ func (d *DB) GetTransactionMetas(
 	return result, nil
 }
 
-func (d *DB) GetTransactionMetasWithFiller(
+func (d *DB) GetTransactionMetasWithAlternativeSources(
 	allowNotFound bool,
-	fillerFuncs []func(key []byte) []byte,
+	slot uint64,
+	onNotFound func(key []byte),
+	alternativeSourceFuncs []func(slot uint64, sig solana.Signature) ([]byte, error),
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
@@ -100,28 +102,29 @@ func (d *DB) GetTransactionMetasWithFiller(
 	defer got.Destroy()
 	result := make([]*TransactionStatusMetaWithRaw, len(keys))
 	for i := range keys {
-		if got[i] == nil || got[i].Size() == 0 {
-			if len(fillerFuncs) > 0 {
-				for _, fillerFunc := range fillerFuncs {
-					filler := fillerFunc(keys[i])
-					if filler != nil {
-						obj := &TransactionStatusMetaWithRaw{
-							Raw: cloneBytes(filler),
-						}
-						result[i] = obj
-						runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
-							obj.Raw = nil
-						})
-						break
+		isNotFound := got[i] == nil || got[i].Size() == 0
+		if isNotFound && onNotFound != nil {
+			onNotFound(keys[i])
+		}
+		if isNotFound && len(alternativeSourceFuncs) > 0 {
+			for _, fillerFunc := range alternativeSourceFuncs {
+				sig := extractSignatureFromKey(keys[i])
+				filler, err := fillerFunc(slot, sig)
+				if filler != nil && err == nil {
+					obj := &TransactionStatusMetaWithRaw{
+						Raw: cloneBytes(filler),
 					}
+					result[i] = obj
+					runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+						obj.Raw = nil
+					})
+					break
 				}
 			}
 		}
-		// TODO: what if got[i] is still empty?
-		if result[i] != nil {
-			continue
-		}
-		if !allowNotFound {
+		if !allowNotFound && isNotFound && result[i] == nil {
+			// was not found in DB, and neither in alternative sources;
+			// given that not found is not allowed, return an error
 			return nil, fmt.Errorf("failed to get tx meta: key not found %v", keys[i])
 		}
 
@@ -208,6 +211,6 @@ func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 	return cloneBytes(got.Data()), nil
 }
 
-func signatureFromKey(key []byte) solana.Signature {
+func extractSignatureFromKey(key []byte) solana.Signature {
 	return solana.SignatureFromBytes(key[8:72])
 }

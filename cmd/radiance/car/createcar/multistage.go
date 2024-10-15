@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gagliardetto/solana-go"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -32,12 +33,13 @@ import (
 )
 
 type blockWorker struct {
-	slotMeta            *radianceblockstore.SlotMeta
-	CIDSetter           func(slot uint64, cid []byte) error
-	handle              *blockstore.WalkHandle
-	done                func(numTx uint64)
-	allowNotFoundTxMeta bool
-	notFoundMetaStats   *CountByDB
+	slotMeta                 *radianceblockstore.SlotMeta
+	CIDSetter                func(slot uint64, cid []byte) error
+	handle                   *blockstore.WalkHandle
+	done                     func(numTx uint64)
+	allowNotFoundTxMeta      bool
+	notFoundMetaStats        *CountByDB
+	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error)
 }
 
 func newBlockWorker(
@@ -47,14 +49,16 @@ func newBlockWorker(
 	h *blockstore.WalkHandle,
 	done func(uint64),
 	notFoundMetaStats *CountByDB,
+	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error),
 ) *blockWorker {
 	return &blockWorker{
-		slotMeta:            slotMeta,
-		CIDSetter:           CIDSetter,
-		handle:              h,
-		done:                done,
-		allowNotFoundTxMeta: allowNotFoundTxMeta,
-		notFoundMetaStats:   notFoundMetaStats,
+		slotMeta:                 slotMeta,
+		CIDSetter:                CIDSetter,
+		handle:                   h,
+		done:                     done,
+		allowNotFoundTxMeta:      allowNotFoundTxMeta,
+		notFoundMetaStats:        notFoundMetaStats,
+		alternativeTxMetaSources: alternativeTxMetaSources,
 	}
 }
 
@@ -85,11 +89,13 @@ func (w blockWorker) Run(
 	numTx = uint64(len(transactionMetaKeys))
 
 	// TODO: specify other sources for transaction metas if they are not found in the DB.
-	metas, err := w.handle.DB.GetTransactionMetas(
+	metas, err := w.handle.DB.GetTransactionMetasWithAlternativeSources(
 		w.allowNotFoundTxMeta,
+		slot,
 		func(key []byte) {
 			w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
 		},
+		w.alternativeTxMetaSources,
 		transactionMetaKeys...,
 	)
 	if err != nil {
@@ -183,14 +189,15 @@ type Multistage struct {
 
 	reg *InMemorySlotRegistry
 
-	workerInputChan     chan concurrently.WorkFunction
-	waitExecuted        *sync.WaitGroup
-	waitResultsReceived sync.WaitGroup
-	numReceivedAtomic   *atomic.Int64
-	numTxAtomic         *atomic.Uint64
-	numWrittenObjects   *atomic.Uint64
-	sizeStats           *StatsSizeByKind
-	statsNotFoundMeta   *CountByDB
+	workerInputChan          chan concurrently.WorkFunction
+	waitExecuted             *sync.WaitGroup
+	waitResultsReceived      sync.WaitGroup
+	numReceivedAtomic        *atomic.Int64
+	numTxAtomic              *atomic.Uint64
+	numWrittenObjects        *atomic.Uint64
+	sizeStats                *StatsSizeByKind
+	statsNotFoundMeta        *CountByDB
+	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error)
 }
 
 type InMemorySlotRegistry struct {
@@ -258,20 +265,22 @@ func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
 	allowNotFoundTxMeta bool,
+	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error),
 ) (*Multistage, error) {
 	if numWorkers == 0 {
 		numWorkers = uint(runtime.NumCPU())
 	}
 	cw := &Multistage{
-		carFilepath:         finalCARFilepath,
-		allowNotFoundTxMeta: allowNotFoundTxMeta,
-		workerInputChan:     make(chan concurrently.WorkFunction, numWorkers),
-		waitExecuted:        new(sync.WaitGroup), // used to wait for results
-		numReceivedAtomic:   new(atomic.Int64),
-		numTxAtomic:         new(atomic.Uint64),
-		numWrittenObjects:   new(atomic.Uint64),
-		sizeStats:           NewStatsSizeByKind(),
-		statsNotFoundMeta:   NewCountByDB(),
+		carFilepath:              finalCARFilepath,
+		allowNotFoundTxMeta:      allowNotFoundTxMeta,
+		workerInputChan:          make(chan concurrently.WorkFunction, numWorkers),
+		waitExecuted:             new(sync.WaitGroup), // used to wait for results
+		numReceivedAtomic:        new(atomic.Int64),
+		numTxAtomic:              new(atomic.Uint64),
+		numWrittenObjects:        new(atomic.Uint64),
+		sizeStats:                NewStatsSizeByKind(),
+		statsNotFoundMeta:        NewCountByDB(),
+		alternativeTxMetaSources: alternativeTxMetaSources,
 	}
 
 	resultStream := concurrently.Process(
@@ -406,6 +415,7 @@ func (cw *Multistage) OnSlotFromDB(
 			cw.waitExecuted.Done()
 		},
 		cw.statsNotFoundMeta,
+		cw.alternativeTxMetaSources,
 	)
 	return nil
 }

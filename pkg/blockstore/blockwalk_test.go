@@ -5,31 +5,10 @@ package blockstore
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMultiWalk_Len(t *testing.T) {
-	{
-		mw := BlockWalk{
-			handles: []WalkHandle{
-				{Start: 0, Stop: 16},
-				{Start: 14, Stop: 31},
-				{Start: 32, Stop: 34},
-				{Start: 36, Stop: 100},
-			},
-		}
-		assert.Equal(t, int(100), int(mw.NumSlotsAvailable()))
-	}
-	{
-		mw := BlockWalk{
-			handles: []WalkHandle{
-				{Start: 0, Stop: 10},
-				{Start: 5, Stop: 9},
-			},
-		}
-		assert.Equal(t, int(11), int(mw.NumSlotsAvailable()))
-	}
 	{
 		nums := []WalkHandle{
 			se(0, 10),

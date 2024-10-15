@@ -16,6 +16,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
+	"github.com/gagliardetto/solana-go"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/linxGnu/grocksdb"
 	"github.com/minio/sha256-simd"
@@ -53,6 +54,9 @@ var (
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
 	flagAllowMissingTxMeta              = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
+	//
+	flagRpcEndpoint       = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
+	flagFillTxMetaFromRPC = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
 )
 
 func init() {
@@ -254,10 +258,26 @@ func run(c *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
+	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
+	if *flagFillTxMetaFromRPC {
+		if *flagRpcEndpoint == "" {
+			klog.Exitf("RPC endpoint is required")
+		}
+		rpcFiller, err := NewRpcFiller(*flagRpcEndpoint)
+		if err != nil {
+			klog.Exitf("Failed to create RPC filler: %s", err)
+		}
+		alternativeTxMetaSources = append(alternativeTxMetaSources, func(slot uint64, sig solana.Signature) ([]byte, error) {
+			return rpcFiller.FillTxMetaFromRPC(c.Context(), slot, sig)
+		})
+		klog.Infof("Will fill missing transaction metadata from RPC")
+	}
+
 	multi, err := NewMultistage(
 		finalCARFilepath,
 		numWorkers,
 		*flagAllowMissingTxMeta,
+		alternativeTxMetaSources,
 	)
 	if err != nil {
 		panic(err)
