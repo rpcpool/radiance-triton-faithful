@@ -96,7 +96,7 @@ func (f *RpcFiller) FillTxMetaFromRPC(
 			}
 			timeout := 60 * time.Second
 			if time.Since(startedWaitingAt) > timeout {
-				return nil, fmt.Errorf("timed out waiting for block to be downloaded")
+				return nil, fmt.Errorf("timed out waiting for block %d to be downloaded", slot)
 			}
 		}
 	} else {
