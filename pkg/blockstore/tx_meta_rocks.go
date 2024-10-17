@@ -10,6 +10,7 @@ import (
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/linxGnu/grocksdb"
+	"k8s.io/klog/v2"
 )
 
 func MakeTxMetadataKey(slot uint64, sig solana.Signature) []byte {
@@ -119,13 +120,17 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 						obj.Raw = nil
 					})
 					break
+				} else {
+					if err != nil {
+						klog.Errorf("failed to get tx meta from alternative source: %v", err)
+					}
 				}
 			}
 		}
 		if !allowNotFound && isNotFound && result[i] == nil {
 			// was not found in DB, and neither in alternative sources;
 			// given that not found is not allowed, return an error
-			return nil, fmt.Errorf("failed to get tx meta: key not found %v", keys[i])
+			return nil, fmt.Errorf("failed to get tx meta: key not found %v, signature %s", keys[i], extractSignatureFromKey(keys[i]))
 		}
 
 		metaBytes := got[i].Data()

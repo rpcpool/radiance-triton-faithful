@@ -9,6 +9,7 @@ import (
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	"google.golang.org/protobuf/proto"
+	"k8s.io/klog/v2"
 )
 
 type RpcFiller struct {
@@ -63,7 +64,7 @@ func (f *RpcFiller) FillTxMetaFromRPC(
 		blockMeta := make(ParsedBlock)
 
 		for _, tx := range block.Transactions {
-			parsedtx, err := tx.GetParsedTransaction()
+			parsedtx, err := tx.GetTransaction()
 			if err != nil {
 				return fmt.Errorf("failed to get parsed tx: %w", err)
 			}
@@ -121,8 +122,16 @@ var ErrTxMetaNotFound = errors.New("tx not found in cached block")
 
 // GetBlock will try to get the block from RPC.
 func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (*rpc.GetBlockResult, error) {
+	klog.Infof("Fetching block %d", slot)
 	block, err := retry(3, func() (*rpc.GetBlockResult, error) {
-		return f.rpcClient.GetBlock(ctx, slot)
+		return f.rpcClient.GetBlockWithOpts(
+			ctx,
+			slot,
+			&rpc.GetBlockOpts{
+				Encoding:                       solana.EncodingBase64,
+				MaxSupportedTransactionVersion: &rpc.MaxSupportedTransactionVersion1,
+			},
+		)
 	})
 	if err != nil {
 		return nil, err

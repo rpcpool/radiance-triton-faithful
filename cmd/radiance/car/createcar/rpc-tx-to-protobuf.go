@@ -53,7 +53,7 @@ func fromRpcTxToProtobufTxMeta(rpcTx *rpc.TransactionWithMeta) (*confirmed_block
 func returnDataToProtobuf(data rpc.ReturnData) *confirmed_block.ReturnData {
 	return &confirmed_block.ReturnData{
 		ProgramId: data.ProgramId.Bytes(),
-		Data:      data.Data,
+		Data:      data.Data.Content,
 	}
 }
 
@@ -100,7 +100,13 @@ func tokenBalancesToProtobuf(balances []rpc.TokenBalance) []*confirmed_block.Tok
 			UiTokenAmount: &confirmed_block.UiTokenAmount{
 				Amount:   balance.UiTokenAmount.Amount,
 				Decimals: uint32(balance.UiTokenAmount.Decimals),
-				UiAmount: *balance.UiTokenAmount.UiAmount,
+				UiAmount: func() float64 {
+					if balance.UiTokenAmount.UiAmount == nil {
+						return 0
+					}
+					return *balance.UiTokenAmount.UiAmount
+				}(),
+				UiAmountString: balance.UiTokenAmount.UiAmountString,
 			},
 		}
 	}
