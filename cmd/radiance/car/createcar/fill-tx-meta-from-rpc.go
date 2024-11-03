@@ -2,12 +2,16 @@ package createcar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
@@ -16,9 +20,10 @@ type RpcFiller struct {
 	rpcClient  *rpc.Client
 	slockLocks *SlotLocks
 	blockCache *BlockCache
+	fillerDB   *BlockFillerStorage
 }
 
-func NewRpcFiller(endpoint string) (*RpcFiller, error) {
+func NewRpcFiller(endpoint string, fillerDB *BlockFillerStorage) (*RpcFiller, error) {
 	rpcClient := rpc.New(endpoint)
 	// try a sample request to check if the endpoint is valid;
 	_, err := rpcClient.GetSlot(context.Background(), rpc.CommitmentFinalized)
@@ -29,7 +34,12 @@ func NewRpcFiller(endpoint string) (*RpcFiller, error) {
 		rpcClient:  rpcClient,
 		slockLocks: NewSlotLocks(),
 		blockCache: NewBlockCache(),
+		fillerDB:   fillerDB,
 	}, nil
+}
+
+func (f *RpcFiller) RemoveFromCache(slot uint64) {
+	f.blockCache.DeleteBlock(slot)
 }
 
 func (f *RpcFiller) FillTxMetaFromRPC(
@@ -122,9 +132,16 @@ var ErrTxMetaNotFound = errors.New("tx not found in cached block")
 
 // GetBlock will try to get the block from RPC.
 func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (*rpc.GetBlockResult, error) {
-	klog.Infof("Fetching block %d", slot)
-	block, err := retry(3, func() (*rpc.GetBlockResult, error) {
-		return f.rpcClient.GetBlockWithOpts(
+	klog.Infof("Fetching block %d from RPC", slot)
+	// try getting it from FillerDB first
+	{
+		blockRaw, err := f.fillerDB.Get(slot)
+		if err == nil {
+			return bytesToBlock(blockRaw)
+		}
+	}
+	blockRaw, err := retry(3, func() (*json.RawMessage, error) {
+		return f.GetRawBlockWithOpts(
 			ctx,
 			slot,
 			&rpc.GetBlockOpts{
@@ -136,7 +153,158 @@ func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (*rpc.GetBlockRes
 	if err != nil {
 		return nil, err
 	}
+	if blockRaw == nil {
+		return nil, fmt.Errorf("block is nil")
+	}
+	// save it to FillerDB
+	err = f.fillerDB.Set(slot, *blockRaw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save block to fillerDB: %w", err)
+	}
+	return bytesToBlock(*blockRaw)
+}
+
+type MessageLine struct {
+	mu sync.Mutex
+}
+
+func (m *MessageLine) Print(msg string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// clear the line and print the message
+	fmt.Printf("\r%s", msg)
+}
+
+func (f *RpcFiller) FetchBlocksToFillerStorage(
+	ctx context.Context,
+	concurrency int,
+	slots []uint64,
+) {
+	wg := errgroup.Group{}
+	wg.SetLimit(concurrency)
+	defer wg.Wait()
+
+	msg := new(MessageLine)
+	numDownloaded := new(atomic.Uint64)
+	numTotal := uint64(len(slots))
+
+	for _, slot := range slots {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		wg.Go(func() error {
+			return func(slot uint64) error {
+				// check if the block is already in the cache
+				_, ok := f.blockCache.GetBlock(slot)
+				if ok {
+					return nil
+				}
+				// check if the block is already in the fillerDB
+				_, err := f.fillerDB.Get(slot)
+				if err == nil {
+					msg.Print(fmt.Sprintf("Block %d is already in fillerDB", slot))
+					numDownloaded.Add(1)
+					return nil
+				}
+				// download the block
+				{
+					blockRaw, err := retry(3, func() (*json.RawMessage, error) {
+						return f.GetRawBlockWithOpts(
+							ctx,
+							slot,
+							&rpc.GetBlockOpts{
+								Encoding:                       solana.EncodingBase64,
+								MaxSupportedTransactionVersion: &rpc.MaxSupportedTransactionVersion1,
+							},
+						)
+					})
+					if err != nil {
+						klog.Errorf("failed to get block %d: %v", slot, err)
+						return nil
+					}
+					if blockRaw == nil {
+						klog.Errorf("block %d is nil", slot)
+						return nil
+					}
+					// save it to FillerDB
+					err = f.fillerDB.Set(slot, *blockRaw)
+					if err != nil {
+						klog.Errorf("failed to save block %d to fillerDB: %v", slot, err)
+						return nil
+					}
+					currentCountDownloaded := numDownloaded.Add(1)
+					percentDone := float64(currentCountDownloaded) / float64(numTotal) * 100
+					msg.Print(fmt.Sprintf("Block %d downloaded and saved to block filler storage; %.2f%% done", slot, percentDone))
+				}
+				return nil
+			}(slot)
+		})
+	}
+}
+
+func bytesToBlock(raw []byte) (*rpc.GetBlockResult, error) {
+	block := new(rpc.GetBlockResult)
+	err := json.Unmarshal(raw, block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+	}
 	return block, nil
+}
+
+func (f *RpcFiller) GetRawBlockWithOpts(
+	ctx context.Context,
+	slot uint64,
+	opts *rpc.GetBlockOpts,
+) (out *json.RawMessage, err error) {
+	obj := rpc.M{
+		"encoding": solana.EncodingBase64,
+	}
+
+	if opts != nil {
+		if opts.TransactionDetails != "" {
+			obj["transactionDetails"] = opts.TransactionDetails
+		}
+		if opts.Rewards != nil {
+			obj["rewards"] = opts.Rewards
+		}
+		if opts.Commitment != "" {
+			obj["commitment"] = opts.Commitment
+		}
+		if opts.Encoding != "" {
+			if !solana.IsAnyOfEncodingType(
+				opts.Encoding,
+				// Valid encodings:
+				// solana.EncodingJSON, // TODO
+				solana.EncodingJSONParsed, // TODO
+				solana.EncodingBase58,
+				solana.EncodingBase64,
+				solana.EncodingBase64Zstd,
+			) {
+				return nil, fmt.Errorf("provided encoding is not supported: %s", opts.Encoding)
+			}
+			obj["encoding"] = opts.Encoding
+		}
+		if opts.MaxSupportedTransactionVersion != nil {
+			obj["maxSupportedTransactionVersion"] = *opts.MaxSupportedTransactionVersion
+		}
+	}
+
+	params := []interface{}{slot, obj}
+
+	err = f.rpcClient.RPCCallForInto(ctx, &out, "getBlock", params)
+	if err != nil {
+		return nil, err
+	}
+	if out == nil {
+		// Block is not confirmed.
+		return nil, rpc.ErrNotConfirmed
+	}
+	return
 }
 
 func retry[T any](times uint8, fn func() (T, error)) (T, error) {

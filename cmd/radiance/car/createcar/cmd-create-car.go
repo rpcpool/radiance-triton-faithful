@@ -53,10 +53,12 @@ var (
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
-	flagAllowMissingTxMeta              = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
 	//
-	flagRpcEndpoint       = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
-	flagFillTxMetaFromRPC = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
+	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
+	flagRpcEndpoint        = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
+	flagFillTxMetaFromRPC  = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
+	flagFillConcurrency    = flags.Uint("fill-concurrency", 1, "Number of concurrent requests to make to the RPC endpoint")
+	fillDBPath             = flags.String("fill-storage-path", "", "Path to the dir where to save the blocks fetched from the RPC endpoint")
 )
 
 func init() {
@@ -258,12 +260,26 @@ func run(c *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
+	var fillDB *BlockFillerStorage
+	var rpcFiller *RpcFiller
+
+	if !*flagAllowMissingTxMeta && !*flagFillTxMetaFromRPC {
+		klog.Infof("Will not fill missing transaction metadata; missing transaction metadata will be treated as an error")
+	}
+
 	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
 	if *flagFillTxMetaFromRPC {
 		if *flagRpcEndpoint == "" {
 			klog.Exitf("RPC endpoint is required")
 		}
-		rpcFiller, err := NewRpcFiller(*flagRpcEndpoint)
+		if *fillDBPath == "" {
+			klog.Exitf("fill-db is required")
+		}
+		fillDB, err = NewBlockFillerStorage(*fillDBPath)
+		if err != nil {
+			klog.Exitf("Failed to create DB filler: %s", err)
+		}
+		rpcFiller, err = NewRpcFiller(*flagRpcEndpoint, fillDB)
 		if err != nil {
 			klog.Exitf("Failed to create RPC filler: %s", err)
 		}
@@ -271,6 +287,62 @@ func run(c *cobra.Command, args []string) {
 			return rpcFiller.FillTxMetaFromRPC(c.Context(), slot, sig)
 		})
 		klog.Infof("Will fill missing transaction metadata from RPC")
+
+		{
+			klog.Info("---")
+			klog.Infof("Checking for missing transaction metadata...")
+			slotsWithMissingMeta := make([]uint64, 0)
+			numSurveyed := uint64(0)
+			scIter := schedule.NewIterator(limitSlots)
+			err = scIter.Iterate(
+				c.Context(),
+				func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
+					if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
+						return nil
+					}
+					// find an entry in the transaction status meta table
+					iter := h.DB.DB.NewIteratorCF(
+						grocksdb.NewDefaultReadOptions(),
+						h.DB.CfTxStatus,
+					)
+					defer iter.Close()
+
+					numSurveyed++
+
+					iter.Seek(blockstore.MakeTxMetadataKey(slot, solana.Signature{}))
+					// check that iter has a non-empty entry
+					if iter.Valid() {
+						key := iter.Key().Data()
+						if len(key) == 0 || len(key) != 80 {
+							slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
+						}
+						value := iter.Value().Data()
+						if len(value) == 0 {
+							slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
+						}
+						if len(key) == 80 {
+							parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
+							if parsedSlot != slot {
+								slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
+							}
+						}
+					} else {
+						slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
+					}
+
+					return nil
+				})
+			if err != nil {
+				panic(err)
+			}
+			if len(slotsWithMissingMeta) > 0 {
+				klog.Warningf("Checked %d slots, and found %d slots with missing transaction metadata", numSurveyed, len(slotsWithMissingMeta))
+			} else {
+				klog.Infof("All slots have transaction metadata")
+			}
+			klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsWithMissingMeta), *flagFillConcurrency)
+			rpcFiller.FetchBlocksToFillerStorage(c.Context(), int(*flagFillConcurrency), slotsWithMissingMeta)
+		}
 	}
 
 	multi, err := NewMultistage(
@@ -287,14 +359,16 @@ func run(c *cobra.Command, args []string) {
 	latestSlot := uint64(0)
 	latestDB := int(0) // 0 is the first DB
 
-	iter := schedule.NewIterator(limitSlots)
+	schedule.EnableProgressBar()
 
+	iter := schedule.NewIterator(limitSlots)
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
 			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
 				return nil
 			}
+			defer rpcFiller.RemoveFromCache(slot)
 			slotMeta, err := h.DB.GetSlotMeta(slot)
 			if err != nil {
 				return fmt.Errorf("failed to get slot meta for slot %d: %w", slot, err)

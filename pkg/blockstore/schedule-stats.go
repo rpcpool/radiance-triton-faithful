@@ -16,6 +16,10 @@ import (
 )
 
 func (w *TraversalSchedule) initStatsTracker(ctx context.Context) error {
+	if w.barInitialized {
+		return nil
+	}
+	w.barInitialized = true
 	discReadRate := ewma.NewMovingAverage(7)
 	discWriteRate := ewma.NewMovingAverage(7)
 	var lastDiscReadRate uint64

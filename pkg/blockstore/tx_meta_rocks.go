@@ -123,6 +123,7 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 				} else {
 					if err != nil {
 						klog.Errorf("failed to get tx meta from alternative source: %v", err)
+						return nil, fmt.Errorf("failed to get tx meta from alternative source: %w", err)
 					}
 				}
 			}
