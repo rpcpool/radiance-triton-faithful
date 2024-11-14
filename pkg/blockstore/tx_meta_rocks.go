@@ -8,12 +8,24 @@ import (
 	"runtime"
 	"sync"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/linxGnu/grocksdb"
 	"k8s.io/klog/v2"
 )
 
-func MakeTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+func MakeTxMetadataKey(
+	isNew bool,
+	slot uint64,
+	sig solana.Signature,
+) []byte {
+	if isNew {
+		return MakeNewTxMetadataKey(slot, sig)
+	}
+	return MakeOldTxMetadataKey(slot, sig)
+}
+
+func MakeOldTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	key := make([]byte, 80)
 	// the first 8 bytes are empty; fill them with zeroes
 	// copy(key[:8], []byte{0, 0, 0, 0, 0, 0, 0, 0})
@@ -24,11 +36,50 @@ func MakeTxMetadataKey(slot uint64, sig solana.Signature) []byte {
 	return key
 }
 
-func ParseTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
+// Somewhere around epoch 630, the key format changed.
+func MakeNewTxMetadataKey(slot uint64, sig solana.Signature) []byte {
+	// key is signature (64 bytes) + slot (8 bytes)
+	key := make([]byte, 72)
+	copy(key, sig[:])
+	binary.BigEndian.PutUint64(key[64:], slot)
+	return key
+}
+
+func ParseOldTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
+	if len(key) != 80 {
+		panic(fmt.Sprintf("invalid old tx metadata key length: %d; expected 80; key: %s", len(key), bin.FormatByteSlice(key)))
+	}
 	sig = solana.Signature{}
 	copy(sig[:], key[8:72])
 	slot = binary.BigEndian.Uint64(key[72:])
 	return
+}
+
+func ParseTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
+	ln := len(key)
+	if ln == 80 {
+		return ParseOldTxMetadataKey(key)
+	}
+	if ln == 72 {
+		return ParseNewTxMetadataKey(key)
+	}
+	panic(fmt.Sprintf("invalid tx metadata key length: %d; expected 80 or 72; key: %s", len(key), bin.FormatByteSlice(key)))
+}
+
+func ParseNewTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
+	// check if the key is in the new format (signature + slot)
+	if len(key) != 72 {
+		panic(fmt.Sprintf("invalid new tx metadata key length: %d; expected 72; key: %s", len(key), bin.FormatByteSlice(key)))
+	}
+	sig = solana.Signature{}
+	copy(sig[:], key[:64])
+	slot = binary.BigEndian.Uint64(key[64:])
+	return
+}
+
+func extractSignatureFromKey(key []byte) solana.Signature {
+	_, sig := ParseTxMetadataKey(key)
+	return sig
 }
 
 var readOptionsPool = sync.Pool{
@@ -215,8 +266,4 @@ func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 		return make([]byte, 0), nil
 	}
 	return cloneBytes(got.Data()), nil
-}
-
-func extractSignatureFromKey(key []byte) solana.Signature {
-	return solana.SignatureFromBytes(key[8:72])
 }

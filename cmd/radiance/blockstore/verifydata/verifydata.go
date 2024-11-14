@@ -88,9 +88,11 @@ func run(c *cobra.Command, args []string) {
 	}
 	defer db.Close()
 
+	isNewTxMetaKeyFormat := false
+
 	if false {
 		keysToBeFound := [][]byte{
-			blockstore.MakeTxMetadataKey(100971705, targetTxSignature),
+			blockstore.MakeTxMetadataKey(isNewTxMetaKeyFormat, 100971705, targetTxSignature),
 		}
 		got, err := db.DB.MultiGet(grocksdb.NewDefaultReadOptions(), keysToBeFound...)
 		if err != nil {
@@ -391,7 +393,7 @@ func run(c *cobra.Command, args []string) {
 								spew.Dump(slotMeta)
 								fmt.Println(firstSignature.String())
 							}
-							key := blockstore.MakeTxMetadataKey(slotMeta.Slot, firstSignature)
+							key := blockstore.MakeTxMetadataKey(isNewTxMetaKeyFormat, slotMeta.Slot, firstSignature)
 							keysToBeFound = append(keysToBeFound, key)
 							if printFirstThenStop {
 								os.Exit(0)

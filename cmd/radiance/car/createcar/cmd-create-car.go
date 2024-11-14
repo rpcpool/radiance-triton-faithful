@@ -268,6 +268,40 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
+	var isNewTxMetaKeyFormat bool
+	{
+	handleLoop:
+		for _, h := range handles {
+			txStatusHandle := h.DB.CfTxStatus
+			klog.Infof("Iterating through column family %q", txStatusHandle.Name())
+
+			// iterate through all keys
+			iter := h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), txStatusHandle)
+			defer iter.Close()
+			iter.SeekToFirst()
+			limit := 10
+			for iter.Valid() {
+				if limit == 0 {
+					continue handleLoop
+				}
+				limit--
+				key := iter.Key().Data()
+				parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
+				_ = parsedSlot
+
+				if len(key) == 72 {
+					// this is the new format
+					isNewTxMetaKeyFormat = true
+					klog.Infof("Found the NEW transaction metadata KEY format in DB %q", h.DB.DB.Name())
+				} else {
+					if isNewTxMetaKeyFormat {
+						klog.Fatalf("Found a mix of old and new transaction metadata keys; this is not supported yet")
+					}
+				}
+				iter.Next()
+			}
+		}
+	}
 	if *flagFillTxMetaFromRPC {
 		if *flagRpcEndpoint == "" {
 			klog.Exitf("RPC endpoint is required")
@@ -290,53 +324,13 @@ func run(c *cobra.Command, args []string) {
 
 		{
 			klog.Info("---")
-			klog.Infof("Checking for missing transaction metadata...")
+			klog.Infof("Checking (fast) for unparseable transaction metadata...")
 			slotsWithMissingMeta := make([]uint64, 0)
-			numSurveyed := uint64(0)
-			scIter := schedule.NewIterator(limitSlots)
-			err = scIter.Iterate(
-				c.Context(),
-				func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
-					if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
-						return nil
-					}
-					// find an entry in the transaction status meta table
-					iter := h.DB.DB.NewIteratorCF(
-						grocksdb.NewDefaultReadOptions(),
-						h.DB.CfTxStatus,
-					)
-					defer iter.Close()
-
-					numSurveyed++
-
-					iter.Seek(blockstore.MakeTxMetadataKey(slot, solana.Signature{}))
-					// check that iter has a non-empty entry
-					if iter.Valid() {
-						key := iter.Key().Data()
-						if len(key) == 0 || len(key) != 80 {
-							slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
-						}
-						value := iter.Value().Data()
-						if len(value) == 0 {
-							slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
-						}
-						if len(key) == 80 {
-							parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
-							if parsedSlot != slot {
-								slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
-							}
-						}
-					} else {
-						slotsWithMissingMeta = append(slotsWithMissingMeta, slot)
-					}
-
-					return nil
-				})
-			if err != nil {
-				panic(err)
+			{
+				// TODO: define a function to check for missing transaction metadata
 			}
 			if len(slotsWithMissingMeta) > 0 {
-				klog.Warningf("Checked %d slots, and found %d slots with missing transaction metadata", numSurveyed, len(slotsWithMissingMeta))
+				klog.Warningf("Found %d slots with missing transaction metadata", len(slotsWithMissingMeta))
 			} else {
 				klog.Infof("All slots have transaction metadata")
 			}
@@ -349,6 +343,7 @@ func run(c *cobra.Command, args []string) {
 		finalCARFilepath,
 		numWorkers,
 		*flagAllowMissingTxMeta,
+		isNewTxMetaKeyFormat,
 		alternativeTxMetaSources,
 	)
 	if err != nil {
