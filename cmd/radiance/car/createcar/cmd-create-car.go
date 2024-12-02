@@ -270,36 +270,38 @@ func run(c *cobra.Command, args []string) {
 	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
 	var isNewTxMetaKeyFormat bool
 	{
-	handleLoop:
 		for _, h := range handles {
-			txStatusHandle := h.DB.CfTxStatus
-			klog.Infof("Iterating through column family %q", txStatusHandle.Name())
+			func() {
+				txStatusHandle := h.DB.CfTxStatus
+				klog.Infof("Iterating through column family %q", txStatusHandle.Name())
 
-			// iterate through all keys
-			iter := h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), txStatusHandle)
-			defer iter.Close()
-			iter.SeekToFirst()
-			limit := 10
-			for iter.Valid() {
-				if limit == 0 {
-					continue handleLoop
-				}
-				limit--
-				key := iter.Key().Data()
-				parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
-				_ = parsedSlot
-
-				if len(key) == 72 {
-					// this is the new format
-					isNewTxMetaKeyFormat = true
-					klog.Infof("Found the NEW transaction metadata KEY format in DB %q", h.DB.DB.Name())
-				} else {
-					if isNewTxMetaKeyFormat {
-						klog.Fatalf("Found a mix of old and new transaction metadata keys; this is not supported yet")
+				// iterate through all keys
+				iter := h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), txStatusHandle)
+				defer iter.Close()
+				iter.SeekToFirst()
+				limit := 10
+				for iter.Valid() {
+					if limit == 0 {
+						return
 					}
+					limit--
+					key := iter.Key().Data()
+					parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
+					_ = parsedSlot
+
+					if len(key) == 72 {
+						// this is the new format
+						isNewTxMetaKeyFormat = true
+						klog.Infof("Found the NEW transaction metadata KEY format in DB %q", h.DB.DB.Name())
+						return
+					} else {
+						if isNewTxMetaKeyFormat {
+							klog.Fatalf("Found a mix of old and new transaction metadata keys; this is not supported yet")
+						}
+					}
+					iter.Next()
 				}
-				iter.Next()
-			}
+			}()
 		}
 	}
 	if *flagFillTxMetaFromRPC {
