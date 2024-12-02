@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"runtime"
-	"sync"
 
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
@@ -82,21 +81,13 @@ func extractSignatureFromKey(key []byte) solana.Signature {
 	return sig
 }
 
-var readOptionsPool = sync.Pool{
-	New: func() interface{} {
-		opts := grocksdb.NewDefaultReadOptions()
-		opts.SetVerifyChecksums(false)
-		opts.SetFillCache(false)
-		return opts
-	},
-}
+var optRocksDBVerifyChecksums = false
 
 func getReadOptions() *grocksdb.ReadOptions {
-	return readOptionsPool.Get().(*grocksdb.ReadOptions)
-}
-
-func putReadOptions(opts *grocksdb.ReadOptions) {
-	readOptionsPool.Put(opts)
+	opts := grocksdb.NewDefaultReadOptions()
+	opts.SetVerifyChecksums(optRocksDBVerifyChecksums)
+	opts.SetFillCache(false)
+	return opts
 }
 
 type TransactionStatusMetaWithRaw struct {
@@ -111,7 +102,7 @@ func (d *DB) GetTransactionMetas(
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
-	defer putReadOptions(opts)
+	defer opts.Destroy()
 	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tx meta: %w", err)
@@ -146,7 +137,7 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
-	defer putReadOptions(opts)
+	defer opts.Destroy()
 	got, err := d.DB.MultiGetCF(opts, d.CfTxStatus, keys...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tx meta: %w", err)
@@ -216,7 +207,7 @@ func (d *DB) GetBlockTime(slot uint64) (uint64, error) {
 	}
 	key := encodeSlotAsKey(slot)
 	opts := getReadOptions()
-	defer putReadOptions(opts)
+	defer opts.Destroy()
 	got, err := d.DB.GetCF(opts, d.CfBlockTime, key)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get blockTime: %w", err)
@@ -234,7 +225,7 @@ func (d *DB) GetBlockHeight(slot uint64) (*uint64, error) {
 	}
 	key := encodeSlotAsKey(slot)
 	opts := getReadOptions()
-	defer putReadOptions(opts)
+	defer opts.Destroy()
 	got, err := d.DB.GetCF(opts, d.CfBlockHeight, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get blockHeight: %w", err)
@@ -252,11 +243,9 @@ func (d *DB) GetRewards(slot uint64) ([]byte, error) {
 		return make([]byte, 0), nil
 	}
 	opts := getReadOptions()
-	defer putReadOptions(opts)
+	defer opts.Destroy()
 
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, slot)
-
+	key := encodeSlotAsKey(slot)
 	got, err := d.DB.GetCF(opts, d.CfRewards, key)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get rewards: %w", err)

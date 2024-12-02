@@ -15,9 +15,8 @@ build_rocksdb: install-deps
 	make static_lib
 full: install_compatible_golang_version build_rocksdb
 	# replace default go tmp build dir from /tpm to ./tmp
-	# TMPDIR=$$(pwd)/tmp \
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
-	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/ -lrocksdb -lbz2" \
+	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/ -lrocksdb -lstdc++ -lm -lbz2" \
 	go1.20.5 build \
 		-ldflags="-X main.GitCommit=$$(git rev-parse HEAD) -X main.GitTag=$$(git symbolic-ref -q --short HEAD || git describe --tags --exact-match)" \
 		./cmd/radiance
@@ -32,4 +31,3 @@ test-full: install_compatible_golang_version build_rocksdb
 	go1.20.5 test ./... -cover -count=1
 clear:
 	rm -rf facebook/rocksdb
-	rm -rf facebook/rocksdb/build

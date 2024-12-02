@@ -54,11 +54,12 @@ var (
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
 	//
-	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
-	flagRpcEndpoint        = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
-	flagFillTxMetaFromRPC  = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
-	flagFillConcurrency    = flags.Uint("fill-concurrency", 1, "Number of concurrent requests to make to the RPC endpoint")
-	fillDBPath             = flags.String("fill-storage-path", "", "Path to the dir where to save the blocks fetched from the RPC endpoint")
+	flagAllowMissingTxMeta    = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
+	flagRpcEndpoint           = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
+	flagFillTxMetaFromRPC     = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
+	flagFillConcurrency       = flags.Uint("fill-concurrency", 1, "Number of concurrent requests to make to the RPC endpoint")
+	fillDBPath                = flags.String("fill-storage-path", "", "Path to the dir where to save the blocks fetched from the RPC endpoint")
+	optRocksDBVerifyChecksums = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
 )
 
 func init() {

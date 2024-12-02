@@ -39,6 +39,9 @@ func NewRpcFiller(endpoint string, fillerDB *BlockFillerStorage) (*RpcFiller, er
 }
 
 func (f *RpcFiller) RemoveFromCache(slot uint64) {
+	if f == nil || f.blockCache == nil {
+		return
+	}
 	f.blockCache.DeleteBlock(slot)
 }
 

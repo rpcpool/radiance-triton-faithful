@@ -413,7 +413,7 @@ func (s *TraversalSchedule) RootExistsInAnyDB(slot uint64) (string, error) {
 	for _, h := range s.getHandles() {
 		key := encodeSlotAsKey(slot)
 		opts := getReadOptions()
-		defer putReadOptions(opts)
+		defer opts.Destroy()
 		got, err := h.DB.DB.GetCF(opts, h.DB.CfRoot, key)
 		if err != nil {
 			continue
@@ -589,7 +589,7 @@ func (schedule *TraversalSchedule) init(
 
 		var slots []uint64
 		opts := getReadOptions()
-		defer putReadOptions(opts)
+		defer opts.Destroy()
 		// Open Next database
 		iter := handle.DB.DB.NewIteratorCF(opts, handle.DB.CfRoot)
 		defer iter.Close()
