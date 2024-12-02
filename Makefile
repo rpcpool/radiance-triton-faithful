@@ -17,7 +17,7 @@ full: install_compatible_golang_version build_rocksdb
 	# replace default go tmp build dir from /tpm to ./tmp
 	# TMPDIR=$$(pwd)/tmp \
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
-	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/ -l:librocksdb.a -lstdc++ -lm -lz -lsnappy -llz4 -lzstd" \
+	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/ -lrocksdb -lbz2" \
 	go1.20.5 build \
 		-ldflags="-X main.GitCommit=$$(git rev-parse HEAD) -X main.GitTag=$$(git symbolic-ref -q --short HEAD || git describe --tags --exact-match)" \
 		./cmd/radiance
