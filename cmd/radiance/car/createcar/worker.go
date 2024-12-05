@@ -7,7 +7,7 @@ import (
 	"go.firedancer.io/radiance/pkg/shred"
 )
 
-func transactionMetaKeysFromEntries(isNewTxMetaKeyFormat bool, slot uint64, entries [][]shred.Entry) ([][]byte, error) {
+func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]byte, error) {
 	ln := 0
 	for _, batch := range entries {
 		for _, entry := range batch {
@@ -20,6 +20,7 @@ func transactionMetaKeysFromEntries(isNewTxMetaKeyFormat bool, slot uint64, entr
 		for _, entry := range batch {
 			for _, tx := range entry.Txns {
 				firstSig := tx.Signatures[0]
+				isNewTxMetaKeyFormat := slot >= blockstore.SlotBoundaryTxMetadataKeyFormatChange
 				keys[index] = blockstore.MakeTxMetadataKey(isNewTxMetaKeyFormat, slot, firstSig)
 				index++
 			}

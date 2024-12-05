@@ -260,6 +260,10 @@ func run(c *cobra.Command, args []string) {
 		time.Sleep(1 * time.Second)
 		os.Exit(0)
 	}
+	// if epoch is 633, the tx meta key format changed at slot blockstore.SlotBoundaryTxMetadataKeyFormatChange
+	if epoch == 633 && slotedges.CalcEpochForSlot(blockstore.SlotBoundaryTxMetadataKeyFormatChange) == epoch {
+		klog.Infof("Epoch 633: the transaction metadata key format changed at slot %d", blockstore.SlotBoundaryTxMetadataKeyFormatChange)
+	}
 
 	var fillDB *BlockFillerStorage
 	var rpcFiller *RpcFiller
@@ -269,42 +273,6 @@ func run(c *cobra.Command, args []string) {
 	}
 
 	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
-	var isNewTxMetaKeyFormat bool
-	{
-		for _, h := range handles {
-			func() {
-				txStatusHandle := h.DB.CfTxStatus
-				klog.Infof("Iterating through column family %q", txStatusHandle.Name())
-
-				// iterate through all keys
-				iter := h.DB.DB.NewIteratorCF(grocksdb.NewDefaultReadOptions(), txStatusHandle)
-				defer iter.Close()
-				iter.SeekToFirst()
-				limit := 10
-				for iter.Valid() {
-					if limit == 0 {
-						return
-					}
-					limit--
-					key := iter.Key().Data()
-					parsedSlot, _ := blockstore.ParseTxMetadataKey(key)
-					_ = parsedSlot
-
-					if len(key) == 72 {
-						// this is the new format
-						isNewTxMetaKeyFormat = true
-						klog.Infof("Found the NEW transaction metadata KEY format in DB %q", h.DB.DB.Name())
-						return
-					} else {
-						if isNewTxMetaKeyFormat {
-							klog.Fatalf("Found a mix of old and new transaction metadata keys; this is not supported yet")
-						}
-					}
-					iter.Next()
-				}
-			}()
-		}
-	}
 	if *flagFillTxMetaFromRPC {
 		if *flagRpcEndpoint == "" {
 			klog.Exitf("RPC endpoint is required")
@@ -346,7 +314,6 @@ func run(c *cobra.Command, args []string) {
 		finalCARFilepath,
 		numWorkers,
 		*flagAllowMissingTxMeta,
-		isNewTxMetaKeyFormat,
 		alternativeTxMetaSources,
 	)
 	if err != nil {

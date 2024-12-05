@@ -34,7 +34,6 @@ import (
 
 type blockWorker struct {
 	slotMeta                 *radianceblockstore.SlotMeta
-	isNewTxMetaKeyFormat     bool
 	CIDSetter                func(slot uint64, cid []byte) error
 	handle                   *blockstore.WalkHandle
 	done                     func(numTx uint64)
@@ -45,7 +44,6 @@ type blockWorker struct {
 
 func newBlockWorker(
 	allowNotFoundTxMeta bool,
-	isNewTxMetaKeyFormat bool,
 	slotMeta *radianceblockstore.SlotMeta,
 	CIDSetter func(slot uint64, cid []byte) error,
 	h *blockstore.WalkHandle,
@@ -55,7 +53,6 @@ func newBlockWorker(
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:                 slotMeta,
-		isNewTxMetaKeyFormat:     isNewTxMetaKeyFormat,
 		CIDSetter:                CIDSetter,
 		handle:                   h,
 		done:                     done,
@@ -85,7 +82,7 @@ func (w blockWorker) Run(
 		return err
 	}
 
-	transactionMetaKeys, err := transactionMetaKeysFromEntries(w.isNewTxMetaKeyFormat, slot, entries)
+	transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
 	if err != nil {
 		return err
 	}
@@ -184,10 +181,9 @@ func (ms *memSubtreeStore) getBlock(c cid.Cid) (*firecar.Block, bool) {
 }
 
 type Multistage struct {
-	settingConcurrency   uint
-	carFilepath          string
-	allowNotFoundTxMeta  bool
-	isNewTxMetaKeyFormat bool
+	settingConcurrency  uint
+	carFilepath         string
+	allowNotFoundTxMeta bool
 
 	storageCar *carHandle
 
@@ -269,7 +265,6 @@ func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
 	allowNotFoundTxMeta bool,
-	isNewTxMetaKeyFormat bool,
 	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error),
 ) (*Multistage, error) {
 	if numWorkers == 0 {
@@ -278,7 +273,6 @@ func NewMultistage(
 	cw := &Multistage{
 		carFilepath:              finalCARFilepath,
 		allowNotFoundTxMeta:      allowNotFoundTxMeta,
-		isNewTxMetaKeyFormat:     isNewTxMetaKeyFormat,
 		workerInputChan:          make(chan concurrently.WorkFunction, numWorkers),
 		waitExecuted:             new(sync.WaitGroup), // used to wait for results
 		numReceivedAtomic:        new(atomic.Int64),
@@ -413,7 +407,6 @@ func (cw *Multistage) OnSlotFromDB(
 	cw.numReceivedAtomic.Add(1)
 	cw.workerInputChan <- newBlockWorker(
 		cw.allowNotFoundTxMeta,
-		cw.isNewTxMetaKeyFormat,
 		slotMeta,
 		cw.reg.SetCID,
 		h,

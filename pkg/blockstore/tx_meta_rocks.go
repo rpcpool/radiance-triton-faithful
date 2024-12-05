@@ -54,6 +54,13 @@ func ParseOldTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
 	return
 }
 
+const (
+	LengthOldTxMetadataKey = 80
+	LengthNewTxMetadataKey = 72
+	// SlotBoundaryTxMetadataKeyFormatChange is the slot where the tx metadata key format changed.
+	SlotBoundaryTxMetadataKeyFormatChange = 273686799
+)
+
 func ParseTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
 	ln := len(key)
 	if ln == 80 {
