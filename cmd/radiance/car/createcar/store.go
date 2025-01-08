@@ -19,13 +19,14 @@ type carHandle struct {
 	lastOffset        int64
 	mu                *sync.Mutex
 	numWrittenObjects *atomic.Uint64
+	sizeStats         *StatsSizeByKind
 }
 
 const (
 	writeBufSize = MiB * 1
 )
 
-func (c *carHandle) open(finalCARFilepath string, numObj *atomic.Uint64) error {
+func (c *carHandle) open(finalCARFilepath string, numObj *atomic.Uint64, sizeStats *StatsSizeByKind) error {
 	if c.ok() {
 		return fmt.Errorf("handle not closed")
 	}
@@ -45,6 +46,7 @@ func (c *carHandle) open(finalCARFilepath string, numObj *atomic.Uint64) error {
 		lastOffset:        0,
 		mu:                &sync.Mutex{},
 		numWrittenObjects: numObj,
+		sizeStats:         sizeStats,
 	}
 	klog.Infof("Created new CAR file %s", file.Name())
 	return nil
@@ -78,6 +80,7 @@ func (c *carHandle) WriteBlock(block car.Block) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.numWrittenObjects.Add(1)
+	c.sizeStats.Infer(block.Data)
 	return c.writer.WriteBlock(block)
 }
 

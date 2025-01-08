@@ -20,7 +20,8 @@ func transactionMetaKeysFromEntries(slot uint64, entries [][]shred.Entry) ([][]b
 		for _, entry := range batch {
 			for _, tx := range entry.Txns {
 				firstSig := tx.Signatures[0]
-				keys[index] = blockstore.MakeTxMetadataKey(slot, firstSig)
+				isNewTxMetaKeyFormat := slot >= blockstore.SlotBoundaryTxMetadataKeyFormatChange
+				keys[index] = blockstore.MakeTxMetadataKey(isNewTxMetaKeyFormat, slot, firstSig)
 				index++
 			}
 		}

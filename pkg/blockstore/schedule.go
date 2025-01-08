@@ -17,10 +17,22 @@ type TraversalSchedule struct {
 
 	///
 	totalSlotsToProcess uint64
+	barInitialized      bool
+	barEnabled          bool
 	bar                 *mpb.Bar
 	///
 
 	schedule []DBtoSlots
+}
+
+// DisableProgressBar disables the progress bar.
+func (s *TraversalSchedule) DisableProgressBar() {
+	s.barEnabled = false
+}
+
+// EnableProgressBar enables the progress bar.
+func (s *TraversalSchedule) EnableProgressBar() {
+	s.barEnabled = true
 }
 
 func init() {
@@ -129,10 +141,12 @@ func (s TraversalSchedule) EachSlot(
 	ctx context.Context,
 	f func(dbIdex int, h *WalkHandle, slot uint64, shredRevision int) error,
 ) error {
-	if err := s.initStatsTracker(ctx); err != nil {
-		return err
+	if s.barEnabled {
+		if err := s.initStatsTracker(ctx); err != nil {
+			return err
+		}
+		defer s.bar.Abort(true)
 	}
-	defer s.bar.Abort(true)
 	shredRevision := s.shredRevision
 	nextRevisionActivationSlot := s.nextShredRevisionActivationSlot
 
@@ -144,7 +158,9 @@ func (s TraversalSchedule) EachSlot(
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				s.bar.Increment()
+				if s.barEnabled {
+					s.bar.Increment()
+				}
 				// If we have a shred revision, we need to check if the slot is in the range of the next revision activation.
 				// If so, we need to increment the shred revision.
 				if activationSlot != nil && slot >= *activationSlot {
@@ -397,7 +413,7 @@ func (s *TraversalSchedule) RootExistsInAnyDB(slot uint64) (string, error) {
 	for _, h := range s.getHandles() {
 		key := encodeSlotAsKey(slot)
 		opts := getReadOptions()
-		defer putReadOptions(opts)
+		defer opts.Destroy()
 		got, err := h.DB.DB.GetCF(opts, h.DB.CfRoot, key)
 		if err != nil {
 			continue
@@ -573,7 +589,7 @@ func (schedule *TraversalSchedule) init(
 
 		var slots []uint64
 		opts := getReadOptions()
-		defer putReadOptions(opts)
+		defer opts.Destroy()
 		// Open Next database
 		iter := handle.DB.DB.NewIteratorCF(opts, handle.DB.CfRoot)
 		defer iter.Close()

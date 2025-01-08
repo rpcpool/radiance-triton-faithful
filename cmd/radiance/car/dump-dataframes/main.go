@@ -118,7 +118,7 @@ func main() {
 			klog.Infof("- %s", iplddecoders.Kind(v).String())
 		}
 	}
-	hashToFrames := make(map[int][]CidToDataFrame)
+	hashToFrames := make(map[uint64][]CidToDataFrame)
 	for {
 		block, err := rd.Next()
 		if errors.Is(err, io.EOF) {

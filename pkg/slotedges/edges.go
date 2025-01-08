@@ -21,3 +21,7 @@ func CalcEpochLimits(epoch uint64) (uint64, uint64) {
 func CalcEpochForSlot(slot uint64) uint64 {
 	return slot / EpochLen
 }
+
+func GetEpochFromSlot(slot uint64) uint64 {
+	return CalcEpochForSlot(slot)
+}
