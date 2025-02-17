@@ -143,7 +143,7 @@ func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (*rpc.GetBlockRes
 			return bytesToBlock(blockRaw)
 		}
 	}
-	blockRaw, err := retry(3, func() (*json.RawMessage, error) {
+	blockRaw, err := retryExpotentialBackoff(NumRpcRetries, func() (*json.RawMessage, error) {
 		return f.GetRawBlockWithOpts(
 			ctx,
 			slot,
@@ -216,7 +216,7 @@ func (f *RpcFiller) FetchBlocksToFillerStorage(
 				}
 				// download the block
 				{
-					blockRaw, err := retry(3, func() (*json.RawMessage, error) {
+					blockRaw, err := retryExpotentialBackoff(NumRpcRetries, func() (*json.RawMessage, error) {
 						return f.GetRawBlockWithOpts(
 							ctx,
 							slot,
@@ -310,7 +310,7 @@ func (f *RpcFiller) GetRawBlockWithOpts(
 	return
 }
 
-func retry[T any](times uint8, fn func() (T, error)) (T, error) {
+func retryLinear[T any](times uint8, fn func() (T, error)) (T, error) {
 	var err error
 	var res T
 	for i := uint8(0); i < times; i++ {
@@ -318,6 +318,21 @@ func retry[T any](times uint8, fn func() (T, error)) (T, error) {
 		if err == nil {
 			return res, nil
 		}
+	}
+	return res, err
+}
+
+var NumRpcRetries = uint8(4)
+
+func retryExpotentialBackoff[T any](times uint8, fn func() (T, error)) (T, error) {
+	var err error
+	var res T
+	for i := uint8(0); i < times; i++ {
+		res, err = fn()
+		if err == nil {
+			return res, nil
+		}
+		time.Sleep(time.Duration(2<<i) * time.Second)
 	}
 	return res, err
 }
