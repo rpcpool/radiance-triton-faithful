@@ -16,9 +16,9 @@ func (s2l SlotToLink) GetLinksSortedBySlot() []datamodel.Link {
 	sort.Slice(slots, func(i, j int) bool {
 		return slots[i] < slots[j]
 	})
-	links := make([]datamodel.Link, 0)
-	for _, slot := range slots {
-		links = append(links, s2l[slot])
+	links := make([]datamodel.Link, len(slots))
+	for i, slot := range slots {
+		links[i] = s2l[slot]
 	}
 	return links
 }
