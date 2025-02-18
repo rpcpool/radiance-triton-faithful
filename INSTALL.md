@@ -46,7 +46,7 @@ by [grocksdb](https://github.com/linxGnu/grocksdb#prerequisite) and
 
 To build RocksDB from source, run the following commands:
 
-    git clone https://github.com/facebook/rocksdb --branch v7.10.2 --depth 1
+    git clone https://github.com/facebook/rocksdb --branch v9.7.3 --depth 1
     cd rocksdb
     mkdir -p build && cd build
     cmake .. \
