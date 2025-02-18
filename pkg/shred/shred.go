@@ -13,16 +13,14 @@ type Shred struct {
 	CommonHeader
 	// CodeHeader
 	DataHeader
-	Payload           []byte
-	MerklePath        [][20]byte
-	MerkleRoot        [32]byte // Only for chained shreds
-	ResignedSignature [64]byte // Only for resigned shreds
+	Payload    []byte
+	MerklePath [][20]byte
 }
 
 const (
 	LegacyCodeID    = uint8(0b0101_1010)
 	LegacyDataID    = uint8(0b1010_0101)
-	MerkleTypeMask  = uint8(0xF0)
+	MerkleTypeMask  = uint8(0b11000000)
 	MerkleDepthMask = uint8(0x0F)
 	MerkleCodeID    = uint8(0x40)
 	MerkleDataID    = uint8(0x80)
@@ -87,60 +85,28 @@ func NewShredFromSerialized(shred []byte, revision int) (s Shred) {
 		panic("todo merkle code shred")
 		// return MerkleCodeFromPayload(shred)
 	case variant&MerkleTypeMask == MerkleDataID:
-		// 1. Extract metadata from variant byte
-		merkleDepth := int(variant & MerkleDepthMask)
-		chained := (variant & 0x20) != 0  // bit 5 indicates chained
-		resigned := (variant & 0x10) != 0 // bit 4 indicates resigned
-
-		// 2. Calculate component sizes
-		merkleProofSize := merkleDepth * 20
-		merkleRootSize := 0
-		if chained {
-			merkleRootSize = 32 // Size of SHA256 hash
-		}
-		signatureSize := 0
-		if resigned {
-			signatureSize = 64 // Size of ED25519 signature
-		}
-
-		// 3. Parse headers
 		s.DataHeader.ParentOffset = binary.LittleEndian.Uint16(shred[0x53:0x55])
 		s.DataHeader.Flags = shred[0x55]
 		s.DataHeader.Size = binary.LittleEndian.Uint16(shred[0x56:0x58])
-
-		// 4. Validate total size
 		payloadOff := LegacyDataV2HeaderSize
-		totalSize := int(s.DataHeader.Size) + merkleProofSize + signatureSize
-		if len(shred) < totalSize {
-			return // Invalid shred length
+		merkleDepth := int(variant & MerkleDepthMask)
+		merkleProofSize := merkleDepth * 20
+		payloadSize := int(s.DataHeader.Size) - LegacyDataV2HeaderSize
+		if payloadSize < 0 {
+			return
 		}
-
-		// 5. Extract payload components
-		dataSize := int(s.DataHeader.Size) - LegacyDataV2HeaderSize - merkleRootSize - signatureSize
-		s.Payload = make([]byte, dataSize)
-		copy(s.Payload, shred[payloadOff:payloadOff+dataSize])
-
-		// 6. Extract Merkle root (if chained)
-		offset := payloadOff + dataSize
-		if chained {
-			// s.MerkleRoot = make([]byte, 32)
-			// copy(s.MerkleRoot, shred[offset:offset+32])
-			offset += 32
+		if len(shred) < int(s.DataHeader.Size)+merkleProofSize {
+			return
 		}
-
-		// 7. Extract Merkle proofs
+		s.Payload = make([]byte, payloadSize)
+		copy(s.Payload, shred[payloadOff:payloadOff+payloadSize])
 		s.MerklePath = make([][20]byte, merkleDepth)
-		for i := 0; i < merkleDepth; i++ {
-			copy(s.MerklePath[i][:], shred[offset:offset+20])
-			offset += 20
+		for i := range s.MerklePath {
+			copy(s.MerklePath[i][:], shred[len(shred)-(merkleDepth-i)*20:len(shred)-(merkleDepth-i-1)*20])
 		}
 
-		// 8. Handle resigned signature
-		if resigned {
-			// copy(s.ResignedSignature[:], shred[offset:offset+64])
-			offset += 64
-		}
 	default:
+		panic("unsupported variant")
 		return
 	}
 	copy(s.Signature[:], shred[0x00:0x40])

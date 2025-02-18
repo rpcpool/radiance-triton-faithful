@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.firedancer.io/radiance/pkg/blockstore"
 	"go.firedancer.io/radiance/pkg/ipld/car"
 	"k8s.io/klog/v2"
 )
@@ -49,6 +50,7 @@ func (c *carHandle) open(finalCARFilepath string, numObj *atomic.Uint64, sizeSta
 		sizeStats:         sizeStats,
 	}
 	klog.Infof("Created new CAR file %s", file.Name())
+	blockstore.DebugShreds = true
 	return nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	bin "github.com/gagliardetto/binary"
 	"github.com/linxGnu/grocksdb"
 	"go.firedancer.io/radiance/pkg/shred"
 )
@@ -31,6 +32,8 @@ func (d *DB) GetDataShreds(slot uint64, startIdx, endIdx uint32, revision int) (
 	iter.Seek(key[:])
 	return GetDataShredsFromIter(iter, slot, startIdx, endIdx, revision)
 }
+
+var DebugShreds = false
 
 // GetDataShredsFromIter is like GetDataShreds, but takes a custom iterator.
 // The iterator must be seeked to the indicated slot/startIdx.
@@ -60,7 +63,10 @@ func GetDataShredsFromIter(
 		}
 		s := shred.NewShredFromSerialized(iter.Value().Data(), revision)
 		if !s.Ok() {
-			return nil, fmt.Errorf("failed to deserialize shred %d/%d for slot %d", i, endIdx, slot)
+			if DebugShreds {
+				fmt.Println(bin.FormatByteSlice(iter.Value().Data()))
+			}
+			return nil, fmt.Errorf("GetDataShredsFromIter: failed to deserialize shred %d/%d for slot %d", i, endIdx, slot)
 		}
 		shreds = append(shreds, s)
 		iter.Next()
