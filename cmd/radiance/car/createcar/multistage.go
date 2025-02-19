@@ -659,6 +659,11 @@ func onTx(
 	for txIndexEntry, transaction := range entry.Txns {
 		firstSig := transaction.Signatures[0]
 
+		err := transaction.VerifySignatures()
+		if err != nil {
+			return fmt.Errorf("failed to verify signatures of transaction %s: %w", firstSig, err)
+		}
+
 		txData, err := transaction.MarshalBinary()
 		if err != nil {
 			return fmt.Errorf("failed to marshal transaction %s: %w", firstSig, err)

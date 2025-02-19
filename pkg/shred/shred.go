@@ -11,7 +11,7 @@ import (
 
 type Shred struct {
 	CommonHeader
-	//CodeHeader
+	// CodeHeader
 	DataHeader
 	Payload    []byte
 	MerklePath [][20]byte
@@ -20,7 +20,7 @@ type Shred struct {
 const (
 	LegacyCodeID    = uint8(0b0101_1010)
 	LegacyDataID    = uint8(0b1010_0101)
-	MerkleTypeMask  = uint8(0xF0)
+	MerkleTypeMask  = uint8(0b11000000)
 	MerkleDepthMask = uint8(0x0F)
 	MerkleCodeID    = uint8(0x40)
 	MerkleDataID    = uint8(0x80)
@@ -53,7 +53,7 @@ func NewShredFromSerialized(shred []byte, revision int) (s Shred) {
 	variant := shred[64]
 	switch {
 	case variant == LegacyCodeID:
-		//s.loadCode()
+		// s.loadCode()
 		panic("todo legacy code shred")
 	case variant == LegacyDataID:
 		var payloadOff, payloadSize int
@@ -83,7 +83,7 @@ func NewShredFromSerialized(shred []byte, revision int) (s Shred) {
 		copy(s.Payload, shred[payloadOff:payloadOff+payloadSize])
 	case variant&MerkleTypeMask == MerkleCodeID:
 		panic("todo merkle code shred")
-		//return MerkleCodeFromPayload(shred)
+		// return MerkleCodeFromPayload(shred)
 	case variant&MerkleTypeMask == MerkleDataID:
 		s.DataHeader.ParentOffset = binary.LittleEndian.Uint16(shred[0x53:0x55])
 		s.DataHeader.Flags = shred[0x55]
@@ -104,7 +104,9 @@ func NewShredFromSerialized(shred []byte, revision int) (s Shred) {
 		for i := range s.MerklePath {
 			copy(s.MerklePath[i][:], shred[len(shred)-(merkleDepth-i)*20:len(shred)-(merkleDepth-i-1)*20])
 		}
+
 	default:
+		panic("unsupported variant")
 		return
 	}
 	copy(s.Signature[:], shred[0x00:0x40])
