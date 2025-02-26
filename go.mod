@@ -36,7 +36,7 @@ require (
 	github.com/multiformats/go-varint v0.0.7
 	github.com/novifinancial/serde-reflection/serde-generate/runtime/golang v0.0.0-20220519162058-e5cd3c3b3f3a
 	github.com/prometheus/client_golang v1.18.0
-	github.com/rpcpool/yellowstone-faithful v0.5.0
+	github.com/rpcpool/yellowstone-faithful v0.6.0
 	github.com/segmentio/textio v1.2.0
 	github.com/slok/go-http-metrics v0.10.0
 	github.com/spaolacci/murmur3 v1.1.0
@@ -105,6 +105,7 @@ require (
 	github.com/flynn/noise v1.0.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.5.4 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -233,6 +234,7 @@ require (
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230818171029-f91ae536ca25 // indirect
 	github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f // indirect
+	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/ybbus/jsonrpc/v3 v3.1.5 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
