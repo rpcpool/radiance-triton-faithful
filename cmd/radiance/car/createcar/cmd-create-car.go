@@ -60,6 +60,7 @@ var (
 	flagFillConcurrency       = flags.Uint("fill-concurrency", 1, "Number of concurrent requests to make to the RPC endpoint")
 	fillDBPath                = flags.String("fill-storage-path", "", "Path to the dir where to save the blocks fetched from the RPC endpoint")
 	optRocksDBVerifyChecksums = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
+	preloadBlocks             = flags.String("preload-blocks", "", "Comma-separated list of blocks to preload for tx meta backfill; can be ranges (e.g., 1-100,200-300) or 'all'")
 )
 
 func init() {
@@ -295,18 +296,37 @@ func run(c *cobra.Command, args []string) {
 
 		{
 			klog.Info("---")
-			klog.Infof("Checking (fast) for unparseable transaction metadata...")
-			slotsWithMissingMeta := make([]uint64, 0)
+			klog.Infof("Checking if we need to preload slots for tx metadata backfill")
+			slotsToPreloadFromRPC := make([]uint64, 0)
 			{
-				// TODO: define a function to check for missing transaction metadata
+				if *preloadBlocks != "" {
+					if *preloadBlocks == "all" {
+						slotsToPreloadFromRPC = slots
+						klog.Warningf("Requested to preload all slots; will preload from RPC all slots")
+					} else {
+						slotsToPreload, err := ParseIntervals(*preloadBlocks)
+						if err != nil {
+							klog.Exitf("Failed to parse --preload-slots: %s", err)
+						}
+						DeduplicateInts(slotsToPreload)
+						for _, slot := range slotsToPreload {
+							if !contains(slots, uint64(slot)) {
+								// skip slots that are not in the schedule
+								continue
+							}
+							slotsToPreloadFromRPC = append(slotsToPreloadFromRPC, uint64(slot))
+						}
+					}
+				}
 			}
-			if len(slotsWithMissingMeta) > 0 {
-				klog.Warningf("Found %d slots with missing transaction metadata", len(slotsWithMissingMeta))
+			if len(slotsToPreloadFromRPC) > 0 {
+				klog.Warningf("Will preload %d slots for tx metadata backfill", len(slotsToPreloadFromRPC))
 			} else {
-				klog.Infof("All slots have transaction metadata")
+				klog.Infof("No slots will be preloaded for tx metadata backfill")
 			}
-			klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsWithMissingMeta), *flagFillConcurrency)
-			rpcFiller.FetchBlocksToFillerStorage(c.Context(), int(*flagFillConcurrency), slotsWithMissingMeta)
+			klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsToPreloadFromRPC), *flagFillConcurrency)
+			rpcFiller.FetchBlocksToFillerStorage(c.Context(), int(*flagFillConcurrency), slotsToPreloadFromRPC)
+			klog.Infof("Done prefetching blocks")
 		}
 	}
 

@@ -34,16 +34,16 @@ func fromRpcTxToProtobufTxMeta(rpcTx *rpc.TransactionWithMeta) (*confirmed_block
 		out.PreBalances = in.PreBalances
 		out.PostBalances = in.PostBalances
 		out.InnerInstructions = innerInstructionsToProtobuf(in.InnerInstructions)
-		// out.InnerInstructionsNone = in.InnerInstructionsNone
+		out.InnerInstructionsNone = len(in.InnerInstructions) == 0
 		out.LogMessages = in.LogMessages
-		// out.LogMessagesNone = in.LogMessagesNone
+		out.LogMessagesNone = len(in.LogMessages) == 0
 		out.PreTokenBalances = tokenBalancesToProtobuf(in.PreTokenBalances)
 		out.PostTokenBalances = tokenBalancesToProtobuf(in.PostTokenBalances)
 		out.Rewards = rewardsToProtobuf(in.Rewards)
 		out.LoadedWritableAddresses = in.LoadedAddresses.Writable.ToBytes()
 		out.LoadedReadonlyAddresses = in.LoadedAddresses.ReadOnly.ToBytes()
 		out.ReturnData = returnDataToProtobuf(in.ReturnData)
-		// out.ReturnDataNone = in.ReturnDataNone
+		out.ReturnDataNone = in.ReturnData.ProgramId.IsZero() && len(in.ReturnData.Data.Content) == 0
 		out.ComputeUnitsConsumed = in.ComputeUnitsConsumed
 	}
 
@@ -51,6 +51,9 @@ func fromRpcTxToProtobufTxMeta(rpcTx *rpc.TransactionWithMeta) (*confirmed_block
 }
 
 func returnDataToProtobuf(data rpc.ReturnData) *confirmed_block.ReturnData {
+	if data.ProgramId.IsZero() && len(data.Data.Content) == 0 {
+		return nil
+	}
 	return &confirmed_block.ReturnData{
 		ProgramId: data.ProgramId.Bytes(),
 		Data:      data.Data.Content,
@@ -108,6 +111,13 @@ func tokenBalancesToProtobuf(balances []rpc.TokenBalance) []*confirmed_block.Tok
 				}(),
 				UiAmountString: balance.UiTokenAmount.UiAmountString,
 			},
+			Owner: balance.Owner.String(),
+			ProgramId: func() string {
+				if balance.ProgramId == nil {
+					return ""
+				}
+				return balance.ProgramId.String()
+			}(),
 		}
 	}
 	return out
