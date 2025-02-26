@@ -1,6 +1,6 @@
 module go.firedancer.io/radiance
 
-go 1.21
+go 1.23
 
 replace github.com/anjor/carlet => github.com/rpcpool/carlet v0.0.4
 
