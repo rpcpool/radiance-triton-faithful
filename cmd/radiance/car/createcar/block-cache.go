@@ -36,6 +36,15 @@ func (c *BlockCache) SetBlock(slot uint64, block ParsedBlock) {
 func (c *BlockCache) DeleteBlock(slot uint64) {
 	c.rwm.Lock()
 	defer c.rwm.Unlock()
+	got, ok := c.cache[slot]
+	if ok {
+		for i := range got {
+			clear(got[i])
+			got[i] = nil
+			delete(got, i)
+		}
+		clear(got)
+	}
 	delete(c.cache, slot)
 }
 
