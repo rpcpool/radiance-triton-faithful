@@ -134,7 +134,7 @@ func watchSlotUpdates(ctx context.Context, node *envv1.RPCNode, highest *sync.Ma
 	}
 
 	for {
-		m, err := sub.Recv()
+		m, err := sub.Recv(context.TODO())
 		if err != nil {
 			return fmt.Errorf("recv: %w", err)
 		}
@@ -250,7 +250,7 @@ func watchSlots(ctx context.Context, node *envv1.RPCNode) error {
 	}
 
 	for {
-		m, err := sub.Recv()
+		m, err := sub.Recv(context.TODO())
 		if err != nil {
 			return fmt.Errorf("recv: %w", err)
 		}
