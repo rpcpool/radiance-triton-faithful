@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gagliardetto/solana-go"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-car/v2"
 	"github.com/ipld/go-ipld-prime/datamodel"
@@ -33,13 +33,13 @@ import (
 )
 
 type blockWorker struct {
-	slotMeta                 *radianceblockstore.SlotMeta
-	CIDSetter                func(slot uint64, cid []byte) error
-	handle                   *blockstore.WalkHandle
-	done                     func(numTx uint64)
-	allowNotFoundTxMeta      bool
-	notFoundMetaStats        *CountByDB
-	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error)
+	slotMeta            *radianceblockstore.SlotMeta
+	CIDSetter           func(slot uint64, cid []byte) error
+	handle              *blockstore.WalkHandle
+	done                func(numTx uint64)
+	allowNotFoundTxMeta bool
+	notFoundMetaStats   *CountByDB
+	txMetaCache         ParsedBlock
 }
 
 func newBlockWorker(
@@ -49,16 +49,16 @@ func newBlockWorker(
 	h *blockstore.WalkHandle,
 	done func(uint64),
 	notFoundMetaStats *CountByDB,
-	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error),
+	txMetaCache ParsedBlock,
 ) *blockWorker {
 	return &blockWorker{
-		slotMeta:                 slotMeta,
-		CIDSetter:                CIDSetter,
-		handle:                   h,
-		done:                     done,
-		allowNotFoundTxMeta:      allowNotFoundTxMeta,
-		notFoundMetaStats:        notFoundMetaStats,
-		alternativeTxMetaSources: alternativeTxMetaSources,
+		slotMeta:            slotMeta,
+		CIDSetter:           CIDSetter,
+		handle:              h,
+		done:                done,
+		allowNotFoundTxMeta: allowNotFoundTxMeta,
+		notFoundMetaStats:   notFoundMetaStats,
+		txMetaCache:         txMetaCache,
 	}
 }
 
@@ -67,6 +67,8 @@ func BlocktimeKey(slot uint64) []byte {
 	binary.BigEndian.PutUint64(key[0:8], slot)
 	return key
 }
+
+var txMetaNewFormatOverride *bool
 
 // The input type should implement the WorkFunction interface
 func (w blockWorker) Run(
@@ -82,7 +84,11 @@ func (w blockWorker) Run(
 		return err
 	}
 
-	transactionMetaKeys, err := transactionMetaKeysFromEntries(slot, entries)
+	isNewTxMetaKeyFormat := true
+	if txMetaNewFormatOverride != nil {
+		isNewTxMetaKeyFormat = *txMetaNewFormatOverride
+	}
+	transactionMetaKeys, err := transactionMetaKeysFromEntries(isNewTxMetaKeyFormat, slot, entries)
 	if err != nil {
 		return err
 	}
@@ -95,11 +101,35 @@ func (w blockWorker) Run(
 		func(key []byte) {
 			w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
 		},
-		w.alternativeTxMetaSources,
+		w.txMetaCache,
 		transactionMetaKeys...,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+		if strings.Contains(err.Error(), "failed to") {
+			transactionMetaKeys, err := transactionMetaKeysFromEntries(!isNewTxMetaKeyFormat, slot, entries)
+			if err != nil {
+				return err
+			}
+			numTx = uint64(len(transactionMetaKeys))
+
+			// TODO: specify other sources for transaction metas if they are not found in the DB.
+			metas, err = w.handle.DB.GetTransactionMetasWithAlternativeSources(
+				w.allowNotFoundTxMeta,
+				slot,
+				func(key []byte) {
+					w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
+				},
+				w.txMetaCache,
+				transactionMetaKeys...,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+			}
+			txMetaNewFormatOverride = new(bool)
+			*txMetaNewFormatOverride = !isNewTxMetaKeyFormat
+		} else {
+			return fmt.Errorf("failed to get transaction metas for slot %d: %w", slot, err)
+		}
 	}
 
 	blockTime, err := w.handle.DB.GetBlockTime(slot)
@@ -189,15 +219,14 @@ type Multistage struct {
 
 	reg *InMemorySlotRegistry
 
-	workerInputChan          chan concurrently.WorkFunction
-	waitExecuted             *sync.WaitGroup
-	waitResultsReceived      sync.WaitGroup
-	numReceivedAtomic        *atomic.Int64
-	numTxAtomic              *atomic.Uint64
-	numWrittenObjects        *atomic.Uint64
-	sizeStats                *StatsSizeByKind
-	statsNotFoundMeta        *CountByDB
-	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error)
+	workerInputChan     chan concurrently.WorkFunction
+	waitExecuted        *sync.WaitGroup
+	waitResultsReceived sync.WaitGroup
+	numReceivedAtomic   *atomic.Int64
+	numTxAtomic         *atomic.Uint64
+	numWrittenObjects   *atomic.Uint64
+	sizeStats           *StatsSizeByKind
+	statsNotFoundMeta   *CountByDB
 }
 
 type InMemorySlotRegistry struct {
@@ -265,22 +294,20 @@ func NewMultistage(
 	finalCARFilepath string,
 	numWorkers uint,
 	allowNotFoundTxMeta bool,
-	alternativeTxMetaSources []func(slot uint64, sig solana.Signature) ([]byte, error),
 ) (*Multistage, error) {
 	if numWorkers == 0 {
 		numWorkers = uint(runtime.NumCPU())
 	}
 	cw := &Multistage{
-		carFilepath:              finalCARFilepath,
-		allowNotFoundTxMeta:      allowNotFoundTxMeta,
-		workerInputChan:          make(chan concurrently.WorkFunction, numWorkers),
-		waitExecuted:             new(sync.WaitGroup), // used to wait for results
-		numReceivedAtomic:        new(atomic.Int64),
-		numTxAtomic:              new(atomic.Uint64),
-		numWrittenObjects:        new(atomic.Uint64),
-		sizeStats:                NewStatsSizeByKind(),
-		statsNotFoundMeta:        NewCountByDB(),
-		alternativeTxMetaSources: alternativeTxMetaSources,
+		carFilepath:         finalCARFilepath,
+		allowNotFoundTxMeta: allowNotFoundTxMeta,
+		workerInputChan:     make(chan concurrently.WorkFunction, numWorkers),
+		waitExecuted:        new(sync.WaitGroup), // used to wait for results
+		numReceivedAtomic:   new(atomic.Int64),
+		numTxAtomic:         new(atomic.Uint64),
+		numWrittenObjects:   new(atomic.Uint64),
+		sizeStats:           NewStatsSizeByKind(),
+		statsNotFoundMeta:   NewCountByDB(),
 	}
 
 	resultStream := concurrently.Process(
@@ -401,6 +428,7 @@ func (cw *Multistage) getConcurrency() int {
 func (cw *Multistage) OnSlotFromDB(
 	h *blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
+	txMetaCache ParsedBlock,
 ) error {
 	cw.waitExecuted.Add(1)
 	cw.waitResultsReceived.Add(1)
@@ -415,7 +443,7 @@ func (cw *Multistage) OnSlotFromDB(
 			cw.waitExecuted.Done()
 		},
 		cw.statsNotFoundMeta,
-		cw.alternativeTxMetaSources,
+		txMetaCache,
 	)
 	return nil
 }

@@ -10,7 +10,6 @@ import (
 	bin "github.com/gagliardetto/binary"
 	"github.com/gagliardetto/solana-go"
 	"github.com/linxGnu/grocksdb"
-	"k8s.io/klog/v2"
 )
 
 func MakeTxMetadataKey(
@@ -57,8 +56,6 @@ func ParseOldTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
 const (
 	LengthOldTxMetadataKey = 80
 	LengthNewTxMetadataKey = 72
-	// SlotBoundaryTxMetadataKeyFormatChange is the slot where the tx metadata key format changed.
-	SlotBoundaryTxMetadataKeyFormatChange = 273686799
 )
 
 func ParseTxMetadataKey(key []byte) (slot uint64, sig solana.Signature) {
@@ -136,11 +133,13 @@ func (d *DB) GetTransactionMetas(
 	return result, nil
 }
 
+type ParsedBlock = map[solana.Signature][]byte
+
 func (d *DB) GetTransactionMetasWithAlternativeSources(
 	allowNotFound bool,
 	slot uint64,
 	onNotFound func(key []byte),
-	alternativeSourceFuncs []func(slot uint64, sig solana.Signature) ([]byte, error),
+	txMetaCache ParsedBlock,
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
@@ -156,25 +155,26 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 		if isNotFound && onNotFound != nil {
 			onNotFound(keys[i])
 		}
-		if isNotFound && len(alternativeSourceFuncs) > 0 {
-			for _, fillerFunc := range alternativeSourceFuncs {
-				sig := extractSignatureFromKey(keys[i])
-				filler, err := fillerFunc(slot, sig)
-				if filler != nil && err == nil {
-					obj := &TransactionStatusMetaWithRaw{
-						Raw: cloneBytes(filler),
-					}
-					result[i] = obj
-					runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
-						obj.Raw = nil
-					})
-					break
-				} else {
-					if err != nil {
-						klog.Errorf("failed to get tx meta from alternative source: %v", err)
-						return nil, fmt.Errorf("failed to get tx meta from alternative source: %w", err)
-					}
+		if isNotFound && len(txMetaCache) > 0 {
+			// try to get it from the cache
+			sig := extractSignatureFromKey(keys[i])
+			if txMeta, ok := txMetaCache[sig]; ok {
+				obj := &TransactionStatusMetaWithRaw{
+					Raw: cloneBytes(txMeta),
 				}
+				result[i] = obj
+				runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+					clear(obj.Raw)
+					obj.Raw = nil
+					obj = nil
+				})
+				continue
+			} else {
+				// return error if not found in cache
+				if !allowNotFound {
+					return nil, fmt.Errorf("failed to get tx meta: key not found %v, signature %s", keys[i], sig)
+				}
+				result[i] = nil
 			}
 		}
 		if !allowNotFound && isNotFound && result[i] == nil {
@@ -190,7 +190,9 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 		result[i] = obj
 
 		runtime.SetFinalizer(obj, func(obj *TransactionStatusMetaWithRaw) {
+			clear(obj.Raw)
 			obj.Raw = nil
+			obj = nil
 		})
 	}
 	return result, nil

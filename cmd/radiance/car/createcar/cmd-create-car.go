@@ -16,7 +16,6 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
-	"github.com/gagliardetto/solana-go"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/linxGnu/grocksdb"
 	"github.com/minio/sha256-simd"
@@ -261,10 +260,6 @@ func run(c *cobra.Command, args []string) {
 		time.Sleep(1 * time.Second)
 		os.Exit(0)
 	}
-	// if epoch is 633, the tx meta key format changed at slot blockstore.SlotBoundaryTxMetadataKeyFormatChange
-	if epoch == 633 && slotedges.CalcEpochForSlot(blockstore.SlotBoundaryTxMetadataKeyFormatChange) == epoch {
-		klog.Infof("Epoch 633: the transaction metadata key format changed at slot %d", blockstore.SlotBoundaryTxMetadataKeyFormatChange)
-	}
 
 	var fillDB *BlockFillerStorage
 	var rpcFiller *RpcFiller
@@ -273,7 +268,6 @@ func run(c *cobra.Command, args []string) {
 		klog.Infof("Will not fill missing transaction metadata; missing transaction metadata will be treated as an error")
 	}
 
-	alternativeTxMetaSources := []func(slot uint64, sig solana.Signature) ([]byte, error){}
 	if *flagFillTxMetaFromRPC {
 		if *flagRpcEndpoint == "" {
 			klog.Exitf("RPC endpoint is required")
@@ -281,6 +275,7 @@ func run(c *cobra.Command, args []string) {
 		if *fillDBPath == "" {
 			klog.Exitf("fill-db is required")
 		}
+		// TODO: make sure the fill db path is per epoch
 		fillDB, err = NewBlockFillerStorage(*fillDBPath)
 		if err != nil {
 			klog.Exitf("Failed to create DB filler: %s", err)
@@ -289,9 +284,7 @@ func run(c *cobra.Command, args []string) {
 		if err != nil {
 			klog.Exitf("Failed to create RPC filler: %s", err)
 		}
-		alternativeTxMetaSources = append(alternativeTxMetaSources, func(slot uint64, sig solana.Signature) ([]byte, error) {
-			return rpcFiller.FillTxMetaFromRPC(c.Context(), slot, sig)
-		})
+
 		klog.Infof("Will fill missing transaction metadata from RPC")
 
 		{
@@ -325,7 +318,7 @@ func run(c *cobra.Command, args []string) {
 				klog.Infof("No slots will be preloaded for tx metadata backfill")
 			}
 			klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsToPreloadFromRPC), *flagFillConcurrency)
-			rpcFiller.FetchBlocksToFillerStorage(c.Context(), int(*flagFillConcurrency), slotsToPreloadFromRPC)
+			rpcFiller.PrefetchBlocks(c.Context(), int(*flagFillConcurrency), slotsToPreloadFromRPC)
 			klog.Infof("Done prefetching blocks")
 		}
 	}
@@ -334,7 +327,6 @@ func run(c *cobra.Command, args []string) {
 		finalCARFilepath,
 		numWorkers,
 		*flagAllowMissingTxMeta,
-		alternativeTxMetaSources,
 	)
 	if err != nil {
 		panic(err)
@@ -353,7 +345,6 @@ func run(c *cobra.Command, args []string) {
 			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
 				return nil
 			}
-			defer rpcFiller.RemoveFromCache(slot)
 			slotMeta, err := h.DB.GetSlotMeta(slot)
 			if err != nil {
 				return fmt.Errorf("failed to get slot meta for slot %d: %w", slot, err)
@@ -403,7 +394,14 @@ func run(c *cobra.Command, args []string) {
 					return nil
 				}
 			}
-			err = multi.OnSlotFromDB(h, slotMeta)
+			var txMetaCacheForBlock ParsedBlock
+			if rpcFiller != nil {
+				txMetaCacheForBlock, err = rpcFiller.GetBlock(c.Context(), slot)
+				if err != nil {
+					return fmt.Errorf("failed to get block %d from txMetaCache: %w", slot, err)
+				}
+			}
+			err = multi.OnSlotFromDB(h, slotMeta, txMetaCacheForBlock)
 			if err != nil {
 				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 			}

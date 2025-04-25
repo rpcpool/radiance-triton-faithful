@@ -11,7 +11,7 @@ build_rocksdb: install-deps
 	mkdir -p build ; \
 	make static_lib
 full: build_rocksdb
-	# replace default go tmp build dir from /tpm to ./tmp
+	# replace default go tmp build dir from /tmp to ./tmp
 	CGO_CFLAGS="-I$$(pwd)/facebook/rocksdb/include" \
 	CGO_LDFLAGS="-L$$(pwd)/facebook/rocksdb/ -lrocksdb -lstdc++ -lm -lbz2" \
 	go build \
