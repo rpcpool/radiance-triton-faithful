@@ -17,10 +17,8 @@ import (
 )
 
 type RpcFiller struct {
-	rpcClient  *rpc.Client
-	slockLocks *SlotLocks
-	blockCache *BlockCache
-	fillerDB   *BlockFillerStorage
+	rpcClient *rpc.Client
+	storage   *BlockFillerStorage
 }
 
 func NewRpcFiller(endpoint string, fillerDB *BlockFillerStorage) (*RpcFiller, error) {
@@ -31,140 +29,59 @@ func NewRpcFiller(endpoint string, fillerDB *BlockFillerStorage) (*RpcFiller, er
 		return nil, err
 	}
 	return &RpcFiller{
-		rpcClient:  rpcClient,
-		slockLocks: NewSlotLocks(),
-		blockCache: NewBlockCache(),
-		fillerDB:   fillerDB,
+		rpcClient: rpcClient,
+		storage:   fillerDB,
 	}, nil
 }
 
-func (f *RpcFiller) RemoveFromCache(slot uint64) {
-	if f == nil || f.blockCache == nil {
-		return
-	}
-	f.blockCache.DeleteBlock(slot)
-}
+type ParsedBlock = map[solana.Signature][]byte
 
-func (f *RpcFiller) FillTxMetaFromRPC(
-	ctx context.Context,
-	slot uint64,
-	tx solana.Signature,
-) ([]byte, error) {
-	{
-		// try from cache first
-		block, ok := f.blockCache.GetBlock(slot)
-		if ok {
-			if txMeta, ok := block[tx]; ok {
-				return txMeta, nil
-			}
-			// the block doesn't have the tx; ERROR
-			return nil, ErrTxMetaNotFound
-		}
-	}
-	// This will either fetch the block, parse it, and cache it,
-	// or wait for the current download to finish,
-	// or return if the download already finished.
-	// - not started (can start)
-	// - started (wait until finished)
-	// - finished (check cache again)
-	thisRun, err := f.slockLocks.OncePerSlot(slot, func() error {
-		// TODO: make so that only one request is made for the same slot, and other requests are blocked until the first one is done, and
-		// then the other requests can get the data from the cache.
-		block, err := f.GetBlock(ctx, slot)
+func fromRpcBlockToParsedBlock(
+	block *rpc.GetBlockResult,
+) (ParsedBlock, error) {
+	blockMeta := make(ParsedBlock)
+	for _, tx := range block.Transactions {
+		parsedtx, err := tx.GetTransaction()
 		if err != nil {
-			return fmt.Errorf("failed to get block: %w", err)
+			return nil, fmt.Errorf("failed to get parsed tx: %w", err)
 		}
-		blockMeta := make(ParsedBlock)
-
-		for _, tx := range block.Transactions {
-			parsedtx, err := tx.GetTransaction()
-			if err != nil {
-				return fmt.Errorf("failed to get parsed tx: %w", err)
-			}
-			sig := parsedtx.Signatures[0]
-			txMeta, err := fromRpcTxToProtobufTxMeta(&tx)
-			if err != nil {
-				return fmt.Errorf("failed to convert tx meta to protobuf for tx %s: %w", sig, err)
-			}
-			encoded, err := proto.Marshal(txMeta)
-			blockMeta[sig] = encoded
+		sig := parsedtx.Signatures[0]
+		txMeta, err := fromRpcTxToProtobufTxMeta(&tx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tx meta to protobuf for tx %s: %w", sig, err)
 		}
-		f.blockCache.SetBlock(slot, blockMeta)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+		encoded, err := proto.Marshal(txMeta)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal tx meta to protobuf for tx %s: %w", sig, err)
+		}
+		if len(encoded) == 0 {
+			return nil, fmt.Errorf("failed to marshal tx meta to protobuf for tx %s: empty encoded", sig)
+		}
+		blockMeta[sig] = encoded
 	}
-	if !thisRun {
-		startedWaitingAt := time.Now()
-		for {
-			// another thread is downloading the block; wait for it to finish;
-			time.Sleep(100 * time.Millisecond)
-			block, ok := f.blockCache.GetBlock(slot)
-			if ok {
-				if txMeta, ok := block[tx]; ok {
-					return txMeta, nil
-				}
-				// the block doesn't have the tx; ERROR
-				return nil, ErrTxMetaNotFound
-			}
-			timeout := 60 * time.Second
-			if time.Since(startedWaitingAt) > timeout {
-				return nil, fmt.Errorf("timed out waiting for block %d to be downloaded", slot)
-			}
-		}
-	} else {
-		// the block was downloaded and cached; check the cache
-		block, ok := f.blockCache.GetBlock(slot)
-		if ok {
-			if txMeta, ok := block[tx]; ok {
-				return txMeta, nil
-			}
-			// the block doesn't have the tx; ERROR
-			return nil, ErrTxMetaNotFound
-		}
-		// the block is not in the cache; ERROR
-		return nil, ErrTxMetaNotFound
-	}
-}
-
-func (f *RpcFiller) lockedOp(slot uint64, op func()) {
+	return blockMeta, nil
 }
 
 var ErrTxMetaNotFound = errors.New("tx not found in cached block")
 
 // GetBlock will try to get the block from RPC.
-func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (*rpc.GetBlockResult, error) {
-	klog.Infof("Fetching block %d from RPC", slot)
-	// try getting it from FillerDB first
-	{
-		blockRaw, err := f.fillerDB.Get(slot)
-		if err == nil {
-			return bytesToBlock(blockRaw)
-		}
+func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock, error) {
+	if f == nil || f.storage == nil {
+		return nil, errors.New("filler is nil")
 	}
-	blockRaw, err := retryExpotentialBackoff(NumRpcRetries, func() (*json.RawMessage, error) {
-		return f.GetRawBlockWithOpts(
-			ctx,
-			slot,
-			&rpc.GetBlockOpts{
-				Encoding:                       solana.EncodingBase64,
-				MaxSupportedTransactionVersion: &rpc.MaxSupportedTransactionVersion1,
-			},
-		)
-	})
+	got, err := f.storage.Get(slot)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get block %d from fillerDB: %w", slot, err)
 	}
-	if blockRaw == nil {
-		return nil, fmt.Errorf("block is nil")
-	}
-	// save it to FillerDB
-	err = f.fillerDB.Set(slot, *blockRaw)
+	block, err := bytesToRpcBlock(got)
 	if err != nil {
-		return nil, fmt.Errorf("failed to save block to fillerDB: %w", err)
+		return nil, fmt.Errorf("failed to convert block %d to protobuf: %w", slot, err)
 	}
-	return bytesToBlock(*blockRaw)
+	parsedBlock, err := fromRpcBlockToParsedBlock(block)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert block %d to protobuf: %w", slot, err)
+	}
+	return parsedBlock, nil
 }
 
 type MessageLine struct {
@@ -178,7 +95,7 @@ func (m *MessageLine) Print(msg string) {
 	fmt.Printf("\r%s", msg)
 }
 
-func (f *RpcFiller) FetchBlocksToFillerStorage(
+func (f *RpcFiller) PrefetchBlocks(
 	ctx context.Context,
 	concurrency int,
 	slots []uint64,
@@ -202,15 +119,14 @@ func (f *RpcFiller) FetchBlocksToFillerStorage(
 		}
 		wg.Go(func() error {
 			return func(slot uint64) error {
-				// check if the block is already in the cache
-				_, ok := f.blockCache.GetBlock(slot)
-				if ok {
+				// check if the block is already in the fillerDB
+				has, err := f.storage.Has(slot)
+				if err != nil {
+					klog.Errorf("failed to check if block %d is in fillerDB: %v", slot, err)
 					return nil
 				}
-				// check if the block is already in the fillerDB
-				_, err := f.fillerDB.Get(slot)
-				if err == nil {
-					msg.Print(fmt.Sprintf("Block %d is already in fillerDB", slot))
+				if has {
+					// msg.Print(fmt.Sprintf("Block %d is already in fillerDB", slot))
 					numDownloaded.Add(1)
 					return nil
 				}
@@ -235,7 +151,7 @@ func (f *RpcFiller) FetchBlocksToFillerStorage(
 						return nil
 					}
 					// save it to FillerDB
-					err = f.fillerDB.Set(slot, *blockRaw)
+					err = f.storage.Set(slot, *blockRaw)
 					if err != nil {
 						klog.Errorf("failed to save block %d to fillerDB: %v", slot, err)
 						return nil
@@ -250,7 +166,7 @@ func (f *RpcFiller) FetchBlocksToFillerStorage(
 	}
 }
 
-func bytesToBlock(raw []byte) (*rpc.GetBlockResult, error) {
+func bytesToRpcBlock(raw []byte) (*rpc.GetBlockResult, error) {
 	block := new(rpc.GetBlockResult)
 	err := json.Unmarshal(raw, block)
 	if err != nil {

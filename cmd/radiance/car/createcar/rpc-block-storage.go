@@ -45,10 +45,7 @@ func (s *BlockFillerStorage) Get(slot uint64) ([]byte, error) {
 		if err != nil {
 			return err
 		}
-		err = item.Value(func(val []byte) error {
-			value = append([]byte{}, val...)
-			return nil
-		})
+		value, err = item.ValueCopy(nil)
 		return err
 	})
 	return value, err
