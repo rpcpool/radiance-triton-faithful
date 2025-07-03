@@ -271,9 +271,12 @@ func run(c *cobra.Command, args []string) {
 
 	if *flagFillTxMetaFromBT {
 		if *fillDBPath == "" {
-			klog.Exitf("fill-db is required")
+			klog.Exitf("You specified --enable-backfill, but did not specify --backfill-cache; please specify where to store the blocks fetched from BigTable")
 		}
-		// TODO: make sure the fill db path is per epoch
+		// check that GOOGLE_APPLICATION_CREDENTIALS is set
+		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
+			klog.Exitf("You specified --enable-backfill, but GOOGLE_APPLICATION_CREDENTIALS is not set; please set it to the path to your Google Cloud service account key file")
+		}
 		txMetaBackfillerDB, err = NewBlockFillerStorage(*fillDBPath, epoch)
 		if err != nil {
 			klog.Exitf("Failed to create tx meta backfill storage: %s", err)
