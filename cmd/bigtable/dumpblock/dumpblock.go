@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
-	"os"
 
-	"google.golang.org/protobuf/encoding/prototext"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/gagliardetto/solana-go"
 	binc "github.com/rpcpool/yellowstone-faithful/parse_legacy_transaction_status_meta"
+	solanatxmetaparsers "github.com/rpcpool/yellowstone-faithful/solana-tx-meta-parsers"
 	"go.firedancer.io/radiance/pkg/ledger_bigtable"
 )
 
@@ -50,21 +52,39 @@ func main() {
 	if block == nil {
 		log.Fatalf("Block not found")
 	}
+	slot := *flagBlock
 
 	if block.Proto != nil {
 		rawBlock := block.Proto
-		b, err := prototext.MarshalOptions{
-			Multiline: true,
-			Indent:    "\t",
-		}.Marshal(rawBlock)
-		if err != nil {
-			log.Fatalf("Could not marshal block: %v", err)
-		}
+		// b, err := prototext.MarshalOptions{
+		// 	Multiline: true,
+		// 	Indent:    "\t",
+		// }.Marshal(rawBlock)
+		// if err != nil {
+		// 	log.Fatalf("Could not marshal block: %v", err)
+		// }
 
 		log.Printf("Fetched block %v with %d txs", *flagBlock, len(rawBlock.Transactions))
 		if *flagDump {
-			if _, err := os.Stdout.Write(b); err != nil {
-				panic(err)
+			for i, tx := range rawBlock.Transactions {
+				log.Printf("Transaction %d: %s", i, tx.Transaction)
+				sig := solana.SignatureFromBytes(tx.Transaction.Signatures[0])
+				meta := tx.Meta
+				metaBuf, err := proto.Marshal(meta)
+				if err != nil {
+					panic(fmt.Errorf("failed to marshal transaction meta for block %d / tx %s: %w", slot, sig, err))
+				}
+				{
+					// sanity check:
+					meta, err := solanatxmetaparsers.ParseTransactionStatusMetaContainer(metaBuf)
+					if err != nil {
+						panic(fmt.Errorf("sanity check: proto block %d / tx %s: failed to parse transaction status meta: %w", slot, sig, err))
+					}
+					if meta == nil {
+						panic(fmt.Errorf("sanity check: proto block %d / tx %s: transaction status meta is nil", slot, sig))
+					}
+					spew.Dump(meta)
+				}
 			}
 		}
 	}
