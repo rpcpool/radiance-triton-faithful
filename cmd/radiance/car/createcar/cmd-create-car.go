@@ -12,10 +12,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
+	"github.com/gagliardetto/solana-go"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
 	"github.com/linxGnu/grocksdb"
 	"github.com/minio/sha256-simd"
@@ -52,14 +54,13 @@ var (
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
+	optRocksDBVerifyChecksums           = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
 	//
-	flagAllowMissingTxMeta    = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
-	flagRpcEndpoint           = flags.String("rpc-endpoint", "", "Solana RPC endpoint to use")
-	flagFillTxMetaFromRPC     = flags.Bool("fill-tx-meta-from-rpc", false, "Fill missing transaction metadata from RPC")
-	flagFillConcurrency       = flags.Uint("fill-concurrency", 1, "Number of concurrent requests to make to the RPC endpoint")
-	fillDBPath                = flags.String("fill-storage-path", "", "Path to the dir where to save the blocks fetched from the RPC endpoint")
-	optRocksDBVerifyChecksums = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
-	preloadBlocks             = flags.String("preload-blocks", "", "Comma-separated list of blocks to preload for tx meta backfill; can be ranges (e.g., 1-100,200-300) or 'all'")
+	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
+	flagFillTxMetaFromBT   = flags.Bool("enable-backfill", false, "Backfill missing transaction metadata from BigTable")
+	flagFillConcurrency    = flags.Uint("backfill-workers", 1, "Number of concurrent requests to make to BigTable for getting blocks for tx metadata backfill")
+	fillDBPath             = flags.String("backfill-cache", "", "Path to the dir where to save the blocks fetched from BigTable.")
+	preloadBlocks          = flags.String("backfill-preload-blocks", "", "Comma-separated list of blocks to preload for tx meta backfill; can be ranges (e.g., 1-100,200-300) or 'all'")
 )
 
 func init() {
@@ -261,41 +262,38 @@ func run(c *cobra.Command, args []string) {
 		os.Exit(0)
 	}
 
-	var fillDB *BlockFillerStorage
-	var rpcFiller *RpcFiller
+	var txMetaBackfillerDB *BlockFillerStorage
+	var btFiller *BigTableFiller
 
-	if !*flagAllowMissingTxMeta && !*flagFillTxMetaFromRPC {
+	if !*flagAllowMissingTxMeta && !*flagFillTxMetaFromBT {
 		klog.Infof("Will not fill missing transaction metadata; missing transaction metadata will be treated as an error")
 	}
 
-	if *flagFillTxMetaFromRPC {
-		if *flagRpcEndpoint == "" {
-			klog.Exitf("RPC endpoint is required")
-		}
+	if *flagFillTxMetaFromBT {
 		if *fillDBPath == "" {
 			klog.Exitf("fill-db is required")
 		}
 		// TODO: make sure the fill db path is per epoch
-		fillDB, err = NewBlockFillerStorage(*fillDBPath)
+		txMetaBackfillerDB, err = NewBlockFillerStorage(*fillDBPath, epoch)
 		if err != nil {
-			klog.Exitf("Failed to create DB filler: %s", err)
+			klog.Exitf("Failed to create tx meta backfill storage: %s", err)
 		}
-		rpcFiller, err = NewRpcFiller(*flagRpcEndpoint, fillDB)
+		btFiller, err = NewBigTableFiller(c.Context(), txMetaBackfillerDB)
 		if err != nil {
-			klog.Exitf("Failed to create RPC filler: %s", err)
+			klog.Exitf("Failed to create BigTable filler: %s", err)
 		}
 
-		klog.Infof("Will fill missing transaction metadata from RPC")
+		klog.Infof("Will fill missing transaction metadata from BigTable")
 
 		{
 			klog.Info("---")
 			klog.Infof("Checking if we need to preload slots for tx metadata backfill")
-			slotsToPreloadFromRPC := make([]uint64, 0)
+			slotsToPreloadFromBT := make([]uint64, 0)
 			{
 				if *preloadBlocks != "" {
 					if *preloadBlocks == "all" {
-						slotsToPreloadFromRPC = slots
-						klog.Warningf("Requested to preload all slots; will preload from RPC all slots")
+						slotsToPreloadFromBT = slots
+						klog.Warningf("Requested to preload all slots; will preload from BigTable all slots")
 					} else {
 						slotsToPreload, err := ParseIntervals(*preloadBlocks)
 						if err != nil {
@@ -307,19 +305,19 @@ func run(c *cobra.Command, args []string) {
 								// skip slots that are not in the schedule
 								continue
 							}
-							slotsToPreloadFromRPC = append(slotsToPreloadFromRPC, uint64(slot))
+							slotsToPreloadFromBT = append(slotsToPreloadFromBT, uint64(slot))
 						}
 					}
 				}
 			}
-			if len(slotsToPreloadFromRPC) > 0 {
-				klog.Warningf("Will preload %d slots for tx metadata backfill", len(slotsToPreloadFromRPC))
+			if len(slotsToPreloadFromBT) > 0 {
+				klog.Infof("Will preload %d slots for tx metadata backfill", len(slotsToPreloadFromBT))
+				klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsToPreloadFromBT), *flagFillConcurrency)
+				btFiller.PrefetchBlocks(c.Context(), int(*flagFillConcurrency), slotsToPreloadFromBT)
+				klog.Infof("Done prefetching blocks")
 			} else {
 				klog.Infof("No slots will be preloaded for tx metadata backfill")
 			}
-			klog.Infof("Prefetching %d blocks with concurrency %d (will take a while) ...", len(slotsToPreloadFromRPC), *flagFillConcurrency)
-			rpcFiller.PrefetchBlocks(c.Context(), int(*flagFillConcurrency), slotsToPreloadFromRPC)
-			klog.Infof("Done prefetching blocks")
 		}
 	}
 
@@ -394,14 +392,39 @@ func run(c *cobra.Command, args []string) {
 					return nil
 				}
 			}
-			var txMetaCacheForBlock ParsedBlock
-			if rpcFiller != nil {
-				txMetaCacheForBlock, err = rpcFiller.GetBlock(c.Context(), slot)
-				if err != nil {
-					return fmt.Errorf("failed to get block %d from txMetaCache: %w", slot, err)
+			var txMetaFillerFunc blockstore.AlternativeMetaGetter
+			if btFiller != nil {
+				var block ParsedBlock
+				mu := &sync.Mutex{}
+				txMetaFillerFunc = func(slot uint64, sig solana.Signature) ([]byte, error) {
+					mu.Lock()
+					defer mu.Unlock()
+					if block == nil {
+						block, err = btFiller.GetBlock(c.Context(), slot)
+						if err != nil {
+							return nil, fmt.Errorf("failed to get block %d from txMetaCache: %w", slot, err)
+						}
+					}
+					metaBuf, ok := block[sig]
+					if !ok {
+						return nil, fmt.Errorf("transaction metadata not found for signature %s in slot %d", sig, slot)
+					}
+					if len(metaBuf) == 0 {
+						return nil, fmt.Errorf("transaction metadata is empty for signature %s in slot %d", sig, slot)
+					}
+					return metaBuf, nil
 				}
+				defer func() {
+					// destroy the block
+					for sig := range block {
+						delete(block, sig)
+					}
+					block = nil
+				}()
+			} else {
+				txMetaFillerFunc = nil
 			}
-			err = multi.OnSlotFromDB(h, slotMeta, txMetaCacheForBlock)
+			err = multi.OnSlotFromDB(h, slotMeta, txMetaFillerFunc)
 			if err != nil {
 				panic(fmt.Errorf("fatal error while processing slot %d: %w", slotMeta.Slot, err))
 			}

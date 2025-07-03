@@ -39,7 +39,7 @@ type blockWorker struct {
 	done                func(numTx uint64)
 	allowNotFoundTxMeta bool
 	notFoundMetaStats   *CountByDB
-	txMetaCache         ParsedBlock
+	txMetaCache         blockstore.AlternativeMetaGetter
 }
 
 func newBlockWorker(
@@ -49,7 +49,7 @@ func newBlockWorker(
 	h *blockstore.WalkHandle,
 	done func(uint64),
 	notFoundMetaStats *CountByDB,
-	txMetaCache ParsedBlock,
+	txMetaCache blockstore.AlternativeMetaGetter,
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:            slotMeta,
@@ -428,7 +428,7 @@ func (cw *Multistage) getConcurrency() int {
 func (cw *Multistage) OnSlotFromDB(
 	h *blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
-	txMetaCache ParsedBlock,
+	txMetaCache blockstore.AlternativeMetaGetter,
 ) error {
 	cw.waitExecuted.Add(1)
 	cw.waitResultsReceived.Add(1)

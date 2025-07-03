@@ -2,86 +2,116 @@ package createcar
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"cloud.google.com/go/bigtable"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
+	"github.com/gogo/protobuf/proto"
+	binc "github.com/rpcpool/yellowstone-faithful/parse_legacy_transaction_status_meta"
+	"go.firedancer.io/radiance/pkg/ledger_bigtable"
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
-type RpcFiller struct {
-	rpcClient *rpc.Client
-	storage   *BlockFillerStorage
+type BigTableFiller struct {
+	btClient *bigtable.Client
+	table    *bigtable.Table
+	storage  *BlockFillerStorage
 }
 
-func NewRpcFiller(endpoint string, fillerDB *BlockFillerStorage) (*RpcFiller, error) {
-	rpcClient := rpc.New(endpoint)
-	// try a sample request to check if the endpoint is valid;
-	_, err := rpcClient.GetSlot(context.Background(), rpc.CommitmentFinalized)
+func NewBigTableFiller(ctx context.Context, fillerDB *BlockFillerStorage) (*BigTableFiller, error) {
+	btClient, err := ledger_bigtable.MainnetClient(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create bigtable client: %w", err)
 	}
-	return &RpcFiller{
-		rpcClient: rpcClient,
-		storage:   fillerDB,
+
+	table := btClient.Open(ledger_bigtable.BlocksTable)
+
+	return &BigTableFiller{
+		btClient: btClient,
+		table:    table,
+		storage:  fillerDB,
 	}, nil
 }
 
 type ParsedBlock = map[solana.Signature][]byte
 
-func fromRpcBlockToParsedBlock(
-	block *rpc.GetBlockResult,
-) (ParsedBlock, error) {
-	blockMeta := make(ParsedBlock)
-	for _, tx := range block.Transactions {
-		parsedtx, err := tx.GetTransaction()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get parsed tx: %w", err)
-		}
-		sig := parsedtx.Signatures[0]
-		txMeta, err := fromRpcTxToProtobufTxMeta(&tx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert tx meta to protobuf for tx %s: %w", sig, err)
-		}
-		encoded, err := proto.Marshal(txMeta)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal tx meta to protobuf for tx %s: %w", sig, err)
-		}
-		if len(encoded) == 0 {
-			return nil, fmt.Errorf("failed to marshal tx meta to protobuf for tx %s: empty encoded", sig)
-		}
-		blockMeta[sig] = encoded
-	}
-	return blockMeta, nil
-}
-
 var ErrTxMetaNotFound = errors.New("tx not found in cached block")
 
-// GetBlock will try to get the block from RPC.
-func (f *RpcFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock, error) {
+// GetBlock will try to get the block from cache first, then from BigTable.
+func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock, error) {
 	if f == nil || f.storage == nil {
 		return nil, errors.New("filler is nil")
 	}
-	got, err := f.storage.Get(slot)
+	{
+		err := f.fetchAndSaveBlockIfNotFound(ctx, slot)
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch and save block %d: %w", slot, err)
+		}
+	}
+	rawBlock, encoding, err := f.storage.Get(slot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get block %d from fillerDB: %w", slot, err)
 	}
-	block, err := bytesToRpcBlock(got)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert block %d to protobuf: %w", slot, err)
+	switch encoding {
+	case ledger_bigtable.BigTableDataEncodingProto:
+		{
+			parsed, err := ledger_bigtable.ParseProtoBlock(rawBlock)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse proto block %d: %w", slot, err)
+			}
+			parsedBlock := make(ParsedBlock, len(parsed.Transactions))
+			for _, tx := range parsed.Transactions {
+				sig := solana.SignatureFromBytes(tx.Transaction.Signatures[0])
+				meta := tx.Meta
+				metaBuf, err := proto.Marshal(meta)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal transaction meta for block %d: %w", slot, err)
+				}
+				parsedBlock[sig] = metaBuf
+			}
+			return parsedBlock, nil
+		}
+	case ledger_bigtable.BigTableDataEncodingBincode:
+		{
+			parsed, err := ledger_bigtable.ParseBincodeBlock(rawBlock)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse bincode block %d: %w", slot, err)
+			}
+			parsedBlock := make(ParsedBlock, len(parsed.Transactions))
+			{
+				for _, tx := range parsed.Transactions {
+					sig := tx.Transaction.Signatures[0]
+					converted := &binc.TransactionStatusMeta{}
+					if tx.Meta.Err == nil {
+						converted.Status = &binc.Result__Ok{}
+					} else {
+						converted.Status = &binc.Result__Err{
+							Value: *tx.Meta.Err,
+						}
+					}
+					converted.Fee = tx.Meta.Fee
+					converted.PostBalances = tx.Meta.PostBalances
+					converted.PreBalances = tx.Meta.PreBalances
+					metaBuf, err := converted.BincodeSerializeStored()
+					if err != nil {
+						panic(err)
+					}
+					parsedBlock[sig] = metaBuf
+				}
+			}
+			return parsedBlock, nil
+		}
+	default:
+		return nil, fmt.Errorf("unknown encoding %s for block %d", encoding, slot)
 	}
-	parsedBlock, err := fromRpcBlockToParsedBlock(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert block %d to protobuf: %w", slot, err)
-	}
-	return parsedBlock, nil
+	return nil, fmt.Errorf("block %d is not in fillerDB", slot)
 }
 
 type MessageLine struct {
@@ -95,7 +125,42 @@ func (m *MessageLine) Print(msg string) {
 	fmt.Printf("\r%s", msg)
 }
 
-func (f *RpcFiller) PrefetchBlocks(
+func (f *BigTableFiller) fetchAndSaveBlockIfNotFound(
+	ctx context.Context,
+	slot uint64,
+) error {
+	// check if the block is already in the fillerDB
+	has, err := f.storage.Has(slot)
+	if err != nil {
+		return fmt.Errorf("failed to check if block %d is in fillerDB: %w", slot, err)
+	}
+	if has {
+		klog.Infof("Block %d is already in fillerDB", slot)
+		return nil
+	}
+
+	// download the block
+	blockRaw, blockEncoding, err := retryExpotentialBackoff(NumBigTableRetries, func() ([]byte, ledger_bigtable.BigTableDataEncoding, error) {
+		return f.GetRawBlockWithOpts(ctx, slot)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get block %d: %w", slot, err)
+	}
+	if blockRaw == nil {
+		return fmt.Errorf("block %d is nil", slot)
+	}
+
+	// save it to FillerDB
+	err = f.storage.Set(slot, blockEncoding, blockRaw)
+	if err != nil {
+		return fmt.Errorf("failed to save block %d to fillerDB: %w", slot, err)
+	}
+
+	klog.Infof("Block %d downloaded and saved to block filler storage", slot)
+	return nil
+}
+
+func (f *BigTableFiller) PrefetchBlocks(
 	ctx context.Context,
 	concurrency int,
 	slots []uint64,
@@ -132,14 +197,10 @@ func (f *RpcFiller) PrefetchBlocks(
 				}
 				// download the block
 				{
-					blockRaw, err := retryExpotentialBackoff(NumRpcRetries, func() (*json.RawMessage, error) {
+					blockRaw, blockEncoding, err := retryExpotentialBackoff(NumBigTableRetries, func() ([]byte, ledger_bigtable.BigTableDataEncoding, error) {
 						return f.GetRawBlockWithOpts(
 							ctx,
 							slot,
-							&rpc.GetBlockOpts{
-								Encoding:                       solana.EncodingBase64,
-								MaxSupportedTransactionVersion: &rpc.MaxSupportedTransactionVersion1,
-							},
 						)
 					})
 					if err != nil {
@@ -151,7 +212,7 @@ func (f *RpcFiller) PrefetchBlocks(
 						return nil
 					}
 					// save it to FillerDB
-					err = f.storage.Set(slot, *blockRaw)
+					err = f.storage.Set(slot, blockEncoding, blockRaw)
 					if err != nil {
 						klog.Errorf("failed to save block %d to fillerDB: %v", slot, err)
 						return nil
@@ -166,64 +227,25 @@ func (f *RpcFiller) PrefetchBlocks(
 	}
 }
 
-func bytesToRpcBlock(raw []byte) (*rpc.GetBlockResult, error) {
-	block := new(rpc.GetBlockResult)
-	err := json.Unmarshal(raw, block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
-	}
-	return block, nil
-}
-
-func (f *RpcFiller) GetRawBlockWithOpts(
+func (f *BigTableFiller) GetRawBlockWithOpts(
 	ctx context.Context,
 	slot uint64,
-	opts *rpc.GetBlockOpts,
-) (out *json.RawMessage, err error) {
-	obj := rpc.M{
-		"encoding": solana.EncodingBase64,
-	}
-
-	if opts != nil {
-		if opts.TransactionDetails != "" {
-			obj["transactionDetails"] = opts.TransactionDetails
-		}
-		if opts.Rewards != nil {
-			obj["rewards"] = opts.Rewards
-		}
-		if opts.Commitment != "" {
-			obj["commitment"] = opts.Commitment
-		}
-		if opts.Encoding != "" {
-			if !solana.IsAnyOfEncodingType(
-				opts.Encoding,
-				// Valid encodings:
-				// solana.EncodingJSON, // TODO
-				solana.EncodingJSONParsed, // TODO
-				solana.EncodingBase58,
-				solana.EncodingBase64,
-				solana.EncodingBase64Zstd,
-			) {
-				return nil, fmt.Errorf("provided encoding is not supported: %s", opts.Encoding)
-			}
-			obj["encoding"] = opts.Encoding
-		}
-		if opts.MaxSupportedTransactionVersion != nil {
-			obj["maxSupportedTransactionVersion"] = *opts.MaxSupportedTransactionVersion
-		}
-	}
-
-	params := []interface{}{slot, obj}
-
-	err = f.rpcClient.RPCCallForInto(ctx, &out, "getBlock", params)
+) ([]byte, ledger_bigtable.BigTableDataEncoding, error) {
+	rowKey := ledger_bigtable.SlotKey(slot)
+	row, err := f.table.ReadRow(ctx, rowKey)
 	if err != nil {
-		return nil, err
+		log.Fatalf("Could not read row: %v", err)
 	}
-	if out == nil {
-		// Block is not confirmed.
-		return nil, rpc.ErrNotConfirmed
+
+	rawBlockBytes, encoding, err := ledger_bigtable.GetRawUncompressedBlock(row)
+	if err != nil {
+		log.Fatalf("Could not parse row: %v", err)
+		return nil, encoding, fmt.Errorf("failed to parse row: %w", err)
 	}
-	return
+	if rawBlockBytes == nil {
+		return nil, encoding, rpc.ErrNotConfirmed
+	}
+	return rawBlockBytes, encoding, nil
 }
 
 func retryLinear[T any](times uint8, fn func() (T, error)) (T, error) {
@@ -238,17 +260,18 @@ func retryLinear[T any](times uint8, fn func() (T, error)) (T, error) {
 	return res, err
 }
 
-var NumRpcRetries = uint8(4)
+var NumBigTableRetries = uint8(4)
 
-func retryExpotentialBackoff[T any](times uint8, fn func() (T, error)) (T, error) {
+func retryExpotentialBackoff[T any, Q any](times uint8, fn func() (T, Q, error)) (T, Q, error) {
 	var err error
 	var res T
+	var resQ Q
 	for i := uint8(0); i < times; i++ {
-		res, err = fn()
+		res, resQ, err = fn()
 		if err == nil {
-			return res, nil
+			return res, resQ, nil
 		}
 		time.Sleep(time.Duration(2<<i) * time.Second)
 	}
-	return res, err
+	return res, resQ, err
 }
