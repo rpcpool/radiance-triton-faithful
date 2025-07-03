@@ -14,6 +14,7 @@ import (
 	"github.com/gagliardetto/solana-go/rpc"
 	"github.com/gogo/protobuf/proto"
 	binc "github.com/rpcpool/yellowstone-faithful/parse_legacy_transaction_status_meta"
+	solanatxmetaparsers "github.com/rpcpool/yellowstone-faithful/solana-tx-meta-parsers"
 	"go.firedancer.io/radiance/pkg/ledger_bigtable"
 	"golang.org/x/sync/errgroup"
 	"k8s.io/klog/v2"
@@ -72,7 +73,17 @@ func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock
 				meta := tx.Meta
 				metaBuf, err := proto.Marshal(meta)
 				if err != nil {
-					return nil, fmt.Errorf("failed to marshal transaction meta for block %d: %w", slot, err)
+					return nil, fmt.Errorf("failed to marshal transaction meta for block %d / tx %s: %w", slot, sig, err)
+				}
+				{
+					// sanity check:
+					meta, err := solanatxmetaparsers.ParseTransactionStatusMetaContainer(metaBuf)
+					if err != nil {
+						return nil, fmt.Errorf("sanity check: proto block %d / tx %s: failed to parse transaction status meta: %w", slot, sig, err)
+					}
+					if meta == nil {
+						return nil, fmt.Errorf("sanity check: proto block %d / tx %s: transaction status meta is nil", slot, sig)
+					}
 				}
 				parsedBlock[sig] = metaBuf
 			}
@@ -101,7 +112,14 @@ func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock
 					converted.PreBalances = tx.Meta.PreBalances
 					metaBuf, err := converted.BincodeSerializeStored()
 					if err != nil {
-						panic(err)
+						return nil, fmt.Errorf("failed to marshal transaction meta for block %d: %w", slot, err)
+					}
+					{
+						// sanity check:
+						_, err := binc.BincodeDeserializeTransactionStatusMeta(metaBuf)
+						if err != nil {
+							return nil, fmt.Errorf("sanity check: bincode block %d / tx %s: failed to parse transaction status meta: %w", slot, sig, err)
+						}
 					}
 					parsedBlock[sig] = metaBuf
 				}
