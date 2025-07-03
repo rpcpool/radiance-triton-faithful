@@ -59,7 +59,7 @@ var (
 	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
 	flagFillTxMetaFromBT   = flags.Bool("enable-backfill", false, "Backfill missing transaction metadata from BigTable")
 	flagFillConcurrency    = flags.Uint("backfill-workers", 1, "Number of concurrent requests to make to BigTable for getting blocks for tx metadata backfill")
-	fillDBPath             = flags.String("backfill-cache", "", "Path to the dir where to save the blocks fetched from BigTable.")
+	fillDBPath             = flags.String("backfill-cache-dir", "", "Path to the dir where to save the blocks fetched from BigTable.")
 	preloadBlocks          = flags.String("backfill-preload-blocks", "", "Comma-separated list of blocks to preload for tx meta backfill; can be ranges (e.g., 1-100,200-300) or 'all'")
 )
 
@@ -271,7 +271,7 @@ func run(c *cobra.Command, args []string) {
 
 	if *flagFillTxMetaFromBT {
 		if *fillDBPath == "" {
-			klog.Exitf("You specified --enable-backfill, but did not specify --backfill-cache; please specify where to store the blocks fetched from BigTable")
+			klog.Exitf("You specified --enable-backfill, but did not specify --backfill-cache-dir; please specify where to store the blocks fetched from BigTable")
 		}
 		// check that GOOGLE_APPLICATION_CREDENTIALS is set
 		if os.Getenv("GOOGLE_APPLICATION_CREDENTIALS") == "" {
