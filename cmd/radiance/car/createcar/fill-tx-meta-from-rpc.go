@@ -99,6 +99,9 @@ func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock
 			{
 				for _, tx := range parsed.Transactions {
 					sig := tx.Transaction.Signatures[0]
+					if tx.Meta == nil {
+						return nil, fmt.Errorf("bincode block %d / tx %s: transaction meta is nil", slot, sig)
+					}
 					converted := &binc.TransactionStatusMeta{}
 					if tx.Meta.Err == nil {
 						converted.Status = &binc.Result__Ok{}
