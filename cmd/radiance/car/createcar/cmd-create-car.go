@@ -410,7 +410,8 @@ func run(c *cobra.Command, args []string) {
 					}
 					metaBuf, ok := block[sig]
 					if !ok {
-						return nil, fmt.Errorf("transaction metadata not found for signature %s in slot %d", sig, slot)
+						klog.Errorf("bigtable backfill: for block %d, transaction %s metadata not found (give up)", slot, sig)
+						return nil, nil
 					}
 					if len(metaBuf) == 0 {
 						return nil, fmt.Errorf("transaction metadata is empty for signature %s in slot %d", sig, slot)

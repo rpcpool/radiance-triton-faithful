@@ -141,7 +141,7 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 	allowNotFound bool,
 	slot uint64,
 	onNotFound func(key []byte),
-	txMetaCache AlternativeMetaGetter,
+	txMetaBackfill AlternativeMetaGetter,
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
@@ -157,10 +157,10 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 		if isNotFound && onNotFound != nil {
 			onNotFound(keys[i])
 		}
-		if isNotFound && txMetaCache != nil {
+		if isNotFound && txMetaBackfill != nil {
 			// try to get it from the cache
 			sig := extractSignatureFromKey(keys[i])
-			if txMeta, err := txMetaCache(slot, sig); err == nil {
+			if txMeta, err := txMetaBackfill(slot, sig); err == nil {
 				obj := &TransactionStatusMetaWithRaw{
 					Raw: cloneBytes(txMeta),
 				}

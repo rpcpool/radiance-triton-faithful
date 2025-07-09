@@ -39,7 +39,7 @@ type blockWorker struct {
 	done                func(numTx uint64)
 	allowNotFoundTxMeta bool
 	notFoundMetaStats   *CountByDB
-	txMetaCache         blockstore.AlternativeMetaGetter
+	txMetaBackfill      blockstore.AlternativeMetaGetter
 }
 
 func newBlockWorker(
@@ -49,7 +49,7 @@ func newBlockWorker(
 	h *blockstore.WalkHandle,
 	done func(uint64),
 	notFoundMetaStats *CountByDB,
-	txMetaCache blockstore.AlternativeMetaGetter,
+	txMetaBackfill blockstore.AlternativeMetaGetter,
 ) *blockWorker {
 	return &blockWorker{
 		slotMeta:            slotMeta,
@@ -58,7 +58,7 @@ func newBlockWorker(
 		done:                done,
 		allowNotFoundTxMeta: allowNotFoundTxMeta,
 		notFoundMetaStats:   notFoundMetaStats,
-		txMetaCache:         txMetaCache,
+		txMetaBackfill:      txMetaBackfill,
 	}
 }
 
@@ -101,7 +101,7 @@ func (w blockWorker) Run(
 		func(key []byte) {
 			w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
 		},
-		w.txMetaCache,
+		w.txMetaBackfill,
 		transactionMetaKeys...,
 	)
 	if err != nil {
@@ -119,7 +119,7 @@ func (w blockWorker) Run(
 				func(key []byte) {
 					w.notFoundMetaStats.AddOne(w.handle.DB.DB.Name())
 				},
-				w.txMetaCache,
+				w.txMetaBackfill,
 				transactionMetaKeys...,
 			)
 			if err != nil {
@@ -428,7 +428,7 @@ func (cw *Multistage) getConcurrency() int {
 func (cw *Multistage) OnSlotFromDB(
 	h *blockstore.WalkHandle,
 	slotMeta *radianceblockstore.SlotMeta,
-	txMetaCache blockstore.AlternativeMetaGetter,
+	txMetaBackfill blockstore.AlternativeMetaGetter,
 ) error {
 	cw.waitExecuted.Add(1)
 	cw.waitResultsReceived.Add(1)
@@ -443,7 +443,7 @@ func (cw *Multistage) OnSlotFromDB(
 			cw.waitExecuted.Done()
 		},
 		cw.statsNotFoundMeta,
-		txMetaCache,
+		txMetaBackfill,
 	)
 	return nil
 }
