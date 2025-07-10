@@ -12,11 +12,11 @@ import (
 	"cloud.google.com/go/bigtable"
 	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
-	"github.com/gogo/protobuf/proto"
 	binc "github.com/rpcpool/yellowstone-faithful/parse_legacy_transaction_status_meta"
 	solanatxmetaparsers "github.com/rpcpool/yellowstone-faithful/solana-tx-meta-parsers"
 	"go.firedancer.io/radiance/pkg/ledger_bigtable"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
@@ -42,8 +42,6 @@ func NewBigTableFiller(ctx context.Context, fillerDB *BlockFillerStorage) (*BigT
 }
 
 type ParsedBlock = map[solana.Signature][]byte
-
-var ErrTxMetaNotFound = errors.New("tx not found in cached block")
 
 // GetBlock will try to get the block from cache first, then from BigTable.
 func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock, error) {
@@ -262,8 +260,7 @@ func (f *BigTableFiller) GetRawBlockWithOpts(
 
 	rawBlockBytes, encoding, err := ledger_bigtable.GetRawUncompressedBlock(row)
 	if err != nil {
-		log.Fatalf("Could not parse row: %v", err)
-		return nil, encoding, fmt.Errorf("failed to parse row: %w", err)
+		return nil, encoding, fmt.Errorf("failed to parse row from bigtable for slot %d: %w", slot, err)
 	}
 	if rawBlockBytes == nil {
 		return nil, encoding, rpc.ErrNotConfirmed

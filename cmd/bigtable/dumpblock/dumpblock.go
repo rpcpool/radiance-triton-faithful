@@ -46,7 +46,7 @@ func main() {
 
 	block, err := ledger_bigtable.ParseRow(row)
 	if err != nil {
-		log.Fatalf("Could not parse row: %v", err)
+		log.Fatalf("Could not parse row for slot %d: %v", *flagBlock, err)
 	}
 
 	if block == nil {

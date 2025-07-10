@@ -47,7 +47,7 @@ func GetEncodingFromBytes(b []byte) (BigTableDataEncoding, int, error) {
 	if bytes.HasPrefix(b, []byte(BigTableDataEncodingBincode)) {
 		return BigTableDataEncodingBincode, len(BigTableDataEncodingBincode), nil
 	}
-	return "", -1, fmt.Errorf("unknown encoding prefix in bytes: %s", b[:MaxEncodingSize])
+	return "", -1, fmt.Errorf("unknown encoding prefix in bytes: %x", b[:MaxEncodingSize])
 }
 
 func GetRawUncompressedBlock(row bigtable.Row) ([]byte, BigTableDataEncoding, error) {
