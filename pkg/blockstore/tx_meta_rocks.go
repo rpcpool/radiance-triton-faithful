@@ -135,11 +135,13 @@ func (d *DB) GetTransactionMetas(
 
 type ParsedBlock = map[solana.Signature][]byte
 
+type AlternativeMetaGetter func(slot uint64, sig solana.Signature) ([]byte, error)
+
 func (d *DB) GetTransactionMetasWithAlternativeSources(
 	allowNotFound bool,
 	slot uint64,
 	onNotFound func(key []byte),
-	txMetaCache ParsedBlock,
+	txMetaBackfill AlternativeMetaGetter,
 	keys ...[]byte,
 ) ([]*TransactionStatusMetaWithRaw, error) {
 	opts := getReadOptions()
@@ -155,10 +157,10 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 		if isNotFound && onNotFound != nil {
 			onNotFound(keys[i])
 		}
-		if isNotFound && len(txMetaCache) > 0 {
+		if isNotFound && txMetaBackfill != nil {
 			// try to get it from the cache
 			sig := extractSignatureFromKey(keys[i])
-			if txMeta, ok := txMetaCache[sig]; ok {
+			if txMeta, err := txMetaBackfill(slot, sig); err == nil {
 				obj := &TransactionStatusMetaWithRaw{
 					Raw: cloneBytes(txMeta),
 				}
@@ -172,7 +174,7 @@ func (d *DB) GetTransactionMetasWithAlternativeSources(
 			} else {
 				// return error if not found in cache
 				if !allowNotFound {
-					return nil, fmt.Errorf("failed to get tx meta: key not found %v, signature %s", keys[i], sig)
+					return nil, fmt.Errorf("failed to get tx meta: key not found %v, signature %s for block %d, with error: %w", keys[i], sig, slot, err)
 				}
 				result[i] = nil
 			}
