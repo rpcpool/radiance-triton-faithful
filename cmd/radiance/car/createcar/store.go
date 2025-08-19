@@ -72,7 +72,7 @@ func (c *carHandle) close() (err error) {
 	return
 }
 
-const MAX_BLOCK_SIZE = 1 << 20
+const MAX_BLOCK_SIZE = 32 << 20 // 32 MiB
 
 func (c *carHandle) WriteBlock(block car.Block) error {
 	totalLength := len(block.Data) + block.Cid.ByteLen()
