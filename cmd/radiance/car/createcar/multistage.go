@@ -494,7 +494,7 @@ func constructBlock(
 		rewardsFirstFrame, err := CreateAndStoreFrames(
 			ms.Store,
 			CompressZstd(rewardsBlob),
-			(MAX_BLOCK_SIZE - 263 - 300),
+			(MAX_IPFS_OBJECT_SIZE - 263 - 300),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create rewards frames: %w", err)
@@ -705,7 +705,7 @@ func onTx(
 		// 	gotOneRandomBigTx = true
 		// }
 
-		firstFrameSize := (MAX_BLOCK_SIZE - 100 - 300) / 2
+		firstFrameSize := (MAX_IPFS_OBJECT_SIZE - 100 - 300) / 2
 
 		txDataFirstFrame, err := CreateAndStoreFrames(
 			ms.Store,

@@ -72,12 +72,12 @@ func (c *carHandle) close() (err error) {
 	return
 }
 
-const MAX_BLOCK_SIZE = 32 << 20 // 32 MiB
+const MAX_IPFS_OBJECT_SIZE = 32 << 20 // 32 MiB
 
 func (c *carHandle) WriteBlock(block car.Block) error {
 	totalLength := len(block.Data) + block.Cid.ByteLen()
-	if totalLength > MAX_BLOCK_SIZE {
-		return fmt.Errorf("block too large: %d bytes (max = %d, %d bytes too big)", totalLength, MAX_BLOCK_SIZE, totalLength-MAX_BLOCK_SIZE)
+	if totalLength > MAX_IPFS_OBJECT_SIZE {
+		return fmt.Errorf("block too large: %d bytes (max = %d, %d bytes too big)", totalLength, MAX_IPFS_OBJECT_SIZE, totalLength-MAX_IPFS_OBJECT_SIZE)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()

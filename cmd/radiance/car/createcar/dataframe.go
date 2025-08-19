@@ -131,7 +131,7 @@ func CreateAndStoreFrames(
 	data []byte,
 	firstFrameSizeLimit int,
 ) (*ipldbindcode.DataFrame, error) {
-	frameSizeLimit := MAX_BLOCK_SIZE - 300
+	frameSizeLimit := MAX_IPFS_OBJECT_SIZE - 300
 	return CreateAndStoreFramesWithFrameSize(store, data, firstFrameSizeLimit, frameSizeLimit)
 }
 
