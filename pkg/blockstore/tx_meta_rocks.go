@@ -249,7 +249,7 @@ func (d *DB) GetBlockHeight(slot uint64) (*uint64, error) {
 	return &value, nil
 }
 
-func (d *DB) GetRewards(slot uint64) ([]byte, error) {
+func (d *DB) GetBlockRewards(slot uint64) ([]byte, error) {
 	if d.CfRewards == nil {
 		return make([]byte, 0), nil
 	}

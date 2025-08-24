@@ -23,12 +23,15 @@ import (
 	"github.com/multiformats/go-multicodec"
 	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
 	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
+	solanablockrewards "github.com/rpcpool/yellowstone-faithful/solana-block-rewards"
+	"github.com/rpcpool/yellowstone-faithful/third_party/solana_proto/confirmed_block"
 	concurrently "github.com/tejzpr/ordered-concurrently/v3"
 	"go.firedancer.io/radiance/pkg/blockstore"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/shred"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
 )
 
@@ -142,7 +145,7 @@ func (w blockWorker) Run(
 		return fmt.Errorf("failed to get block height for slot %d: %w", slot, err)
 	}
 
-	rewards, err := w.handle.DB.GetRewards(slot)
+	blockRewards, err := w.handle.DB.GetBlockRewards(slot)
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
@@ -160,7 +163,7 @@ func (w blockWorker) Run(
 		blockHeight,
 		entries,
 		metas,
-		rewards,
+		blockRewards,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
@@ -461,6 +464,15 @@ func getRandomBytes(l int) []byte {
 	return b
 }
 
+func sortRewardsByPubkey(rewards *confirmed_block.Rewards) {
+	// Sort rewards by Pubkey for consistent output.
+	if rewards != nil && rewards.Rewards != nil {
+		sort.Slice(rewards.Rewards, func(i, j int) bool {
+			return rewards.Rewards[i].Pubkey < rewards.Rewards[j].Pubkey
+		})
+	}
+}
+
 func constructBlock(
 	ms *memSubtreeStore,
 	slotMeta *radianceblockstore.SlotMeta,
@@ -468,7 +480,7 @@ func constructBlock(
 	blockHeight *uint64,
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
-	rewardsBlob []byte,
+	blockRewardsBlob []byte,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -490,10 +502,22 @@ func constructBlock(
 
 	var rewardsNodeLink datamodel.Link
 
-	if len(rewardsBlob) > 0 {
+	if len(blockRewardsBlob) > 0 {
+		parsedRewards, err := solanablockrewards.ParseRewards(blockRewardsBlob)
+		if err != nil {
+			klog.Errorf("failed to parse rewards: %v", err)
+		} else {
+			sortRewardsByPubkey(parsedRewards)
+			sortedRewardsBlob, err := proto.Marshal(parsedRewards)
+			if err != nil {
+				klog.Errorf("failed to marshal rewards: %v", err)
+			} else {
+				blockRewardsBlob = sortedRewardsBlob
+			}
+		}
 		rewardsFirstFrame, err := CreateAndStoreFrames(
 			ms.Store,
-			CompressZstd(rewardsBlob),
+			CompressZstd(blockRewardsBlob),
 			(MAX_IPFS_OBJECT_SIZE - 263 - 300),
 		)
 		if err != nil {
