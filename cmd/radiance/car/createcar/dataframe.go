@@ -131,7 +131,7 @@ func CreateAndStoreFrames(
 	data []byte,
 	firstFrameSizeLimit int,
 ) (*ipldbindcode.DataFrame, error) {
-	frameSizeLimit := MaxObjectSize - 300
+	frameSizeLimit := MAX_IPFS_OBJECT_SIZE - 300
 	return CreateAndStoreFramesWithFrameSize(store, data, firstFrameSizeLimit, frameSizeLimit)
 }
 
@@ -239,8 +239,7 @@ func frameToDatamodelNodeAssembler(
 }
 
 const (
-	MaxObjectSize = 1 << 20 // 1 MiB
-	NumNextLinks  = 5       // how many links to store in each dataFrame
+	NumNextLinks = 5 // how many links to store in each dataFrame
 )
 
 func splitSlice[T comparable](slice []T, size int) [][]T {
