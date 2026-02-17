@@ -312,6 +312,9 @@ func (se *SubEntries) UnmarshalWithDecoder(decoder *bin.Decoder) (err error) {
 	if err != nil {
 		return fmt.Errorf("failed to read number of entries: %w", err)
 	}
+	if numEntries == 0 {
+		return fmt.Errorf("%w: numEntries=0", ErrVecMisaligned)
+	}
 
 	// If numEntries is insane relative to remaining bytes, this is almost certainly
 	// not aligned to a Vec<Entry> start (you are at padding/junk).
