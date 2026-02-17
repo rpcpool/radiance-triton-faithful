@@ -170,8 +170,11 @@ func canRecover(db *DB, iter *grocksdb.Iterator) (uint64, bool) {
 	if !ok {
 		return 0, false
 	}
-	meta, err := ParseBincode[SlotMeta](iter.Value().Data())
+	meta, ver, err := DecodeSlotMetaAuto(iter.Value().Data())
 	if err != nil {
+		return 0, false
+	}
+	if ver != SlotMetaV1 && ver != SlotMetaV2 {
 		return 0, false
 	}
 	if meta.ParentSlot == math.MaxUint64 {

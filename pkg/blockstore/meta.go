@@ -199,8 +199,9 @@ func decodeSlotMetaV2(base *SlotMeta, connectedFlags uint8, r *reader) (*SlotMet
 		return nil, SlotMetaUnknown, err
 	}
 	if r.remaining() != 0 {
-		// If you want to be more permissive, you can drop this check.
-		return nil, SlotMetaUnknown, fmt.Errorf("slotmeta v2: trailing bytes=%d", r.remaining())
+		// print warning but be permissive and ignore trailing bytes, as Rust's Deserialize does.
+		fmt.Printf("slotmeta v2: warning: trailing bytes=%d\n", r.remaining())
+		// return nil, SlotMetaUnknown, fmt.Errorf("slotmeta v2: trailing bytes=%d", r.remaining())
 	}
 
 	// Rust custom Deserialize allows shorter buffers and zero-fills to NUM_WORDS.
