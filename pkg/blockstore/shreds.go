@@ -127,14 +127,6 @@ type bufSeg struct {
 
 func isAllZero(b []byte) bool { return len(bytes.Trim(b, "\x00")) == 0 }
 
-func trimLeadingZeros(b []byte) (trimmed []byte, nTrim int) {
-	i := 0
-	for i < len(b) && b[i] == 0 {
-		i++
-	}
-	return b[i:], i
-}
-
 func dropFront(segs *[]bufSeg, k int) {
 	if k <= 0 {
 		return
@@ -199,11 +191,6 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 	// If boundary==true, then any remaining bytes must be zero padding only.
 	decodeMany := func(boundary bool, boundaryShredIdx int) error {
 		for {
-			var nTrim int
-			buf, nTrim = trimLeadingZeros(buf)
-			if nTrim > 0 {
-				dropFront(&segs, nTrim)
-			}
 			if len(buf) == 0 {
 				return nil
 			}
@@ -269,11 +256,6 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 			dropFront(&segs, consumedBytes)
 
 			if boundary {
-				var nTrim2 int
-				buf, nTrim2 = trimLeadingZeros(buf)
-				if nTrim2 > 0 {
-					dropFront(&segs, nTrim2)
-				}
 				if len(buf) == 0 || isAllZero(buf) {
 					buf = nil
 					segs = nil
@@ -304,10 +286,6 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 	}
 
 	// End: allow only zero padding.
-	buf, nTrim := trimLeadingZeros(buf)
-	if nTrim > 0 {
-		dropFront(&segs, nTrim)
-	}
 	if len(buf) != 0 && !isAllZero(buf) {
 		// A last-resort: sometimes buf starts with junk; if it's obviously not a Vec prefix, ignore only if all padding.
 		if strings.Trim(string(buf), "\x00") != "" {
