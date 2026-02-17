@@ -198,5 +198,30 @@ func getEntriesAnyVersion(db *DB, meta *SlotMeta) ([]Entries, error) {
 // GetSlotMeta returns the shredding metadata of a given slot.
 func (d *DB) GetSlotMeta(slot uint64) (*SlotMeta, error) {
 	key := MakeSlotKey(slot)
-	return GetBincode[SlotMeta](d.DB, d.CfMeta, key[:])
+
+	{
+		opts := grocksdb.NewDefaultReadOptions()
+		opts.SetVerifyChecksums(false)
+		opts.SetFillCache(false)
+		res, err := d.DB.GetCF(opts, d.CfMeta, key[:])
+		if err != nil {
+			return nil, err
+		}
+		if !res.Exists() {
+			return nil, ErrNotFound
+		}
+		defer res.Free()
+
+		decoded, v, err := DecodeSlotMetaAuto(res.Data())
+		if err != nil {
+			return nil, err
+		}
+		if v != SlotMetaV1 && v != SlotMetaV2 {
+			return nil, fmt.Errorf("unknown slot meta version %d for slot %d", v, slot)
+		}
+		if decoded == nil {
+			return nil, fmt.Errorf("failed to decode slot meta for slot %d", slot)
+		}
+		return decoded, nil
+	}
 }
