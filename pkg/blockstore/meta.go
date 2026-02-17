@@ -118,14 +118,14 @@ func DecodeSlotMetaAuto(b []byte) (*SlotMeta, SlotMetaVersion, error) {
 		return nil, SlotMetaUnknown, err
 	}
 
-	// Fast-path v2: exact BitVec byte length
-	if n == completedIndexesBitVecBytes {
-		return decodeSlotMetaV2(out, x, r)
-	}
-
 	// Try v1 if it "fits well" (exact consumption, plausible lengths).
 	if meta1, ok := tryDecodeSlotMetaV1(out, x, r.clone()); ok {
 		return meta1, SlotMetaV1, nil
+	}
+
+	// Fast-path v2: exact BitVec byte length
+	if n == completedIndexesBitVecBytes {
+		return decodeSlotMetaV2(out, x, r)
 	}
 
 	// Otherwise v2.
@@ -200,7 +200,7 @@ func decodeSlotMetaV2(base *SlotMeta, connectedFlags uint8, r *reader) (*SlotMet
 	}
 	if r.remaining() != 0 {
 		// print warning but be permissive and ignore trailing bytes, as Rust's Deserialize does.
-		fmt.Printf("slotmeta v2: warning: trailing bytes=%d\n", r.remaining())
+		// fmt.Printf("slotmeta v2: warning: trailing bytes=%d\n", r.remaining())
 		// return nil, SlotMetaUnknown, fmt.Errorf("slotmeta v2: trailing bytes=%d", r.remaining())
 	}
 
