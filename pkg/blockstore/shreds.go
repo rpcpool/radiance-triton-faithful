@@ -3,9 +3,11 @@ package blockstore
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	bin "github.com/gagliardetto/binary"
 	"go.firedancer.io/radiance/pkg/shred"
@@ -118,99 +120,243 @@ func (e *Entries) Slot() uint64 {
 	return e.Shreds[0].Slot
 }
 
-func isAllZero(b []byte) bool {
-	// faster than looping in Go for large buffers
-	return len(bytes.TrimRight(b, "\x00")) == 0
+type bufSeg struct {
+	shredIdx int
+	n        int
 }
 
-func trimLeadingZeros(b []byte) []byte {
+func isAllZero(b []byte) bool { return len(bytes.Trim(b, "\x00")) == 0 }
+
+func trimLeadingZeros(b []byte) (trimmed []byte, nTrim int) {
 	i := 0
 	for i < len(b) && b[i] == 0 {
 		i++
 	}
-	return b[i:]
+	return b[i:], i
 }
 
-func DataShredsToEntries(meta *SlotMeta, shreds []shred.Shred) ([]Entries, error) {
-	var out []Entries
-	var buf []byte
+func dropFront(segs *[]bufSeg, k int) {
+	if k <= 0 {
+		return
+	}
+	s := *segs
+	for k > 0 && len(s) > 0 {
+		if k >= s[0].n {
+			k -= s[0].n
+			s = s[1:]
+			continue
+		}
+		s[0].n -= k
+		k = 0
+	}
+	*segs = s
+}
 
-	// Which shred index begins the current undecoded buffer (coarse bookkeeping)
-	startShred := 0
+func segRangeForBytes(segs []bufSeg, k int) (start, end int) {
+	if len(segs) == 0 || k <= 0 {
+		return -1, -1
+	}
+	start = segs[0].shredIdx
+	end = segs[0].shredIdx
+	rem := k
+	for _, sg := range segs {
+		if rem <= 0 {
+			break
+		}
+		end = sg.shredIdx
+		rem -= sg.n
+	}
+	return start, end
+}
 
-	for i := 0; i < len(shreds); i++ {
-		// Append this shred's payload bytes
-		buf = append(buf, shred.Concat([]shred.Shred{shreds[i]})...)
+// DataShredsToEntries reconstructs Vec<Entry> batches robustly.
+// Fixes the "zero consumption" panic by never trusting dec.Position() when Unmarshal succeeded;
+// we compute consumed bytes ourselves and ignore empty/zero-length decodes.
+func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, error) {
+	if !meta.IsFull() {
+		return nil, nil
+	}
+	if len(shredsIn) == 0 {
+		return nil, nil
+	}
 
+	consumed := int(meta.Consumed)
+	if consumed <= 0 || consumed > len(shredsIn) {
+		consumed = len(shredsIn)
+	}
+	shreds := shredsIn[:consumed]
+
+	var (
+		out  []Entries
+		buf  []byte
+		segs []bufSeg
+	)
+
+	var dec bin.Decoder
+	dec.SetEncoding(bin.EncodingBin)
+
+	// Attempt to decode as many Vec<Entry> as possible from the front of buf.
+	// If boundary==true, then any remaining bytes must be zero padding only.
+	decodeMany := func(boundary bool, boundaryShredIdx int) error {
 		for {
-			// If buffer is only zeros, defer decision until we've appended more shreds.
-			// (Or if this is the end, we'll accept it as padding.)
-			buf = trimLeadingZeros(buf)
+			var nTrim int
+			buf, nTrim = trimLeadingZeros(buf)
+			if nTrim > 0 {
+				dropFront(&segs, nTrim)
+			}
 			if len(buf) == 0 {
-				startShred = i + 1
-				break
+				return nil
 			}
 
-			var dec bin.Decoder
-			dec.SetEncoding(bin.EncodingBin)
+			// Snapshot start offset (Decoder doesn't guarantee Position semantics)
+			startOff := len(buf)
+
 			dec.Reset(buf)
-
-			var sub SubEntries
-			err := sub.UnmarshalWithDecoder(&dec)
+			var se SubEntries
+			err := se.UnmarshalWithDecoder(&dec)
 			if err != nil {
-				// Most common cause here is "need more bytes": stop inner loop,
-				// append more shred bytes, try again.
-				break
+				// If misaligned, wait for more bytes unless boundary forces a decision.
+				if !boundary {
+					return nil
+				}
+				if isAllZero(buf) {
+					buf = nil
+					segs = nil
+					return nil
+				}
+				return fmt.Errorf("slot %d: cannot decode Vec<Entry> at shreds ~[%d-%d]: %w",
+					meta.Slot, segs[0].shredIdx, boundaryShredIdx, err)
 			}
 
-			consumed := dec.Position()
-			raw := buf[:consumed]
+			// Compute consumedBytes without trusting dec.Position().
+			// The gagliardetto/binary decoder tracks remaining; that is reliable.
+			consumedBytes := startOff - dec.Remaining()
+			if consumedBytes <= 0 {
+				// Treat as "nothing decoded": if at boundary, require padding-only; otherwise wait.
+				if boundary {
+					if isAllZero(buf) {
+						buf = nil
+						segs = nil
+						return nil
+					}
+					// If this triggers, it's because the decoder succeeded without consuming,
+					// which should not happen; dump a short prefix for debugging.
+					prefix := buf
+					if len(prefix) > 64 {
+						prefix = prefix[:64]
+					}
+					return fmt.Errorf("slot %d: decoded Vec<Entry> with zero consumption at shred %d; buf_prefix=%v",
+						meta.Slot, boundaryShredIdx, prefix)
+				}
+				return nil
+			}
 
-			// Associate with shreds [startShred..i]; if you need exact mapping when
-			// a Vec<Entry> ends mid-shred, you'll need byte->shred accounting.
-			parts := shreds[startShred : i+1]
+			startShred, endShred := segRangeForBytes(segs, consumedBytes)
+			if startShred < 0 || endShred < 0 || endShred >= len(shreds) {
+				return fmt.Errorf("slot %d: shred mapping failed (start=%d end=%d) consumedBytes=%d",
+					meta.Slot, startShred, endShred, consumedBytes)
+			}
 
+			raw := buf[:consumedBytes]
 			out = append(out, Entries{
-				Entries: sub.Entries,
+				Entries: se.Entries,
 				Raw:     raw,
-				Shreds:  parts,
+				Shreds:  shreds[startShred : endShred+1],
 			})
 
-			buf = buf[consumed:]
-			// next blob might still be in same shred if consumed < len(prev buf)
-			// keep startShred as-is until we fully drain/shave buffer to empty
+			// Drop decoded bytes
+			buf = buf[consumedBytes:]
+			dropFront(&segs, consumedBytes)
+
+			if boundary {
+				var nTrim2 int
+				buf, nTrim2 = trimLeadingZeros(buf)
+				if nTrim2 > 0 {
+					dropFront(&segs, nTrim2)
+				}
+				if len(buf) == 0 || isAllZero(buf) {
+					buf = nil
+					segs = nil
+					return nil
+				}
+
+				// If remaining isn't zero padding, it might be another Vec<Entry> start inside same shred.
+				// Loop and decode again.
+			}
 		}
 	}
 
-	// After processing all shreds: remaining bytes are OK iff they're all zero padding.
-	buf = trimLeadingZeros(buf)
-	if len(buf) != 0 && !isAllZero(buf) {
-		return nil, fmt.Errorf("slot %d: trailing undecoded bytes=%d (non-zero)", meta.Slot, len(buf))
+	for i, s := range shreds {
+		if len(s.Payload) > 0 {
+			buf = append(buf, s.Payload...)
+			segs = append(segs, bufSeg{shredIdx: i, n: len(s.Payload)})
+		}
+
+		if s.DataHeader.DataComplete() || s.DataHeader.LastInSlot() {
+			if err := decodeMany(true, i); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := decodeMany(false, i); err != nil {
+				return nil, err
+			}
+		}
 	}
+
+	// End: allow only zero padding.
+	buf, nTrim := trimLeadingZeros(buf)
+	if nTrim > 0 {
+		dropFront(&segs, nTrim)
+	}
+	if len(buf) != 0 && !isAllZero(buf) {
+		// A last-resort: sometimes buf starts with junk; if it's obviously not a Vec prefix, ignore only if all padding.
+		if strings.Trim(string(buf), "\x00") != "" {
+			return nil, fmt.Errorf("slot %d: trailing undecoded non-zero bytes=%d", meta.Slot, len(buf))
+		}
+	}
+
 	return out, nil
 }
+
+var ErrVecMisaligned = errors.New("vec<entry> misaligned/garbage prefix")
+
+// hard guardrails to avoid treating random bytes as a Vec length
+const (
+	MaxEntriesPerBatch = 1_000_000 // absurdly high but finite; tune if you want
+)
 
 type SubEntries struct {
 	Entries []shred.Entry
 }
 
 func (se *SubEntries) UnmarshalWithDecoder(decoder *bin.Decoder) (err error) {
-	// read the number of entries:
 	numEntries, err := decoder.ReadUint64(bin.LE)
 	if err != nil {
 		return fmt.Errorf("failed to read number of entries: %w", err)
 	}
-	if numEntries > uint64(decoder.Remaining()) {
-		return fmt.Errorf("not enough bytes to read %d entries", numEntries)
+
+	// If numEntries is insane relative to remaining bytes, this is almost certainly
+	// not aligned to a Vec<Entry> start (you are at padding/junk).
+	rem := uint64(decoder.Remaining())
+	if numEntries > rem || numEntries > MaxEntriesPerBatch {
+		return fmt.Errorf("%w: numEntries=%d remaining=%d", ErrVecMisaligned, numEntries, rem)
 	}
-	// read the entries:
+
 	se.Entries = make([]shred.Entry, numEntries)
 	for i := uint64(0); i < numEntries; i++ {
 		if err = se.Entries[i].UnmarshalWithDecoder(decoder); err != nil {
 			return fmt.Errorf("failed to read entry %d: %w", i, err)
 		}
 	}
-	return
+	return nil
+}
+
+// Helpers for the resync scanner (fast header probe without allocating a Decoder)
+func peekU64LE(b []byte) (uint64, bool) {
+	if len(b) < 8 {
+		return 0, false
+	}
+	return binary.LittleEndian.Uint64(b[:8]), true
 }
 
 type ShredIndexV2 struct {
