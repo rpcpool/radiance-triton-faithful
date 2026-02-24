@@ -86,10 +86,14 @@ func getLowestCompletedSlot(d *DB, shredRevision int, nextRevisionActivationSlot
 
 		// RocksDB row writes are atomic, therefore meta should never be broken.
 		// If we fail to decode meta, bail as early as possible, as we cannot guarantee compatibility.
-		meta, err := ParseBincode[SlotMeta](iter.Value().Data())
+		meta, ver, err := DecodeSlotMetaAuto(iter.Value().Data())
 		if err != nil {
 			return 0, fmt.Errorf(
 				"getLowestCompletedSlot(%s): choked on invalid meta for slot %d", d.DB.Name(), slot)
+		}
+		if ver != SlotMetaV1 && ver != SlotMetaV2 {
+			return 0, fmt.Errorf(
+				"getLowestCompletedSlot(%s): choked on unsupported meta version %d for slot %d", d.DB.Name(), ver, slot)
 		}
 
 		if _, err = d.GetEntries(meta, shredRevision); err == nil {

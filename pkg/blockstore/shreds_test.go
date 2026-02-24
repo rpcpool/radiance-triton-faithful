@@ -14,11 +14,11 @@ func TestDataShredsToEntries_Mainnet_Genesis(t *testing.T) {
 	rawShreds := fixtures.DataShreds(t, "mainnet", 0)
 	shreds := parseShreds(t, rawShreds, 1)
 	meta := &SlotMeta{
-		Consumed:           3,
-		Received:           3,
-		LastIndex:          2,
-		NumEntryEndIndexes: 1,
-		EntryEndIndexes:    []uint32{2},
+		Consumed:  3,
+		Received:  3,
+		LastIndex: 2,
+		// NumEntryEndIndexes: 1,
+		EntryEndIndexes: []uint32{2},
 	}
 	entries, err := DataShredsToEntries(meta, shreds)
 	require.NoError(t, err)
@@ -385,11 +385,11 @@ func TestDataShredsToEntries_Mainnet_Recent(t *testing.T) {
 	rawShreds := fixtures.DataShreds(t, "mainnet", 102815960)
 	shreds := parseShreds(t, rawShreds, 2)
 	meta := &SlotMeta{
-		Consumed:           1427,
-		Received:           1427,
-		LastIndex:          1426,
-		NumEntryEndIndexes: 574,
-		EntryEndIndexes:    mainnet_102815960_EntryEndIndexes,
+		Consumed:  1427,
+		Received:  1427,
+		LastIndex: 1426,
+		// NumEntryEndIndexes: 574,
+		EntryEndIndexes: mainnet_102815960_EntryEndIndexes,
 	}
 	entries, err := DataShredsToEntries(meta, shreds)
 	require.NoError(t, err)

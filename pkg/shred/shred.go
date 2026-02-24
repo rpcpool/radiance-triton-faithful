@@ -43,6 +43,12 @@ const (
 	LegacyDataV1PayloadSize = 1057 // TODO where does this number come from?
 )
 
+const (
+	FlagUpper2Mask          = uint8(0b1100_0000)
+	FlagDataCompletePattern = uint8(0b0100_0000) // DATA_COMPLETE_SHRED
+	FlagLastInSlotPattern   = uint8(0b1100_0000) // LAST_SHRED_IN_SLOT
+)
+
 // NewShredFromSerialized creates a shred object from the given buffer.
 //
 // The original slice may be deallocated after this function returns.
@@ -163,14 +169,18 @@ type DataHeader struct {
 	Size         uint16
 }
 
-func (d *DataHeader) EndOfBlock() bool {
-	return d.Flags&FlagDataEndOfBlock != 0
-}
-
-func (s *DataHeader) EndOfBatch() bool {
-	return s.Flags&FlagDataEndOfBatch == 1
-}
-
 func (s *DataHeader) Tick() uint8 {
 	return s.Flags & FlagDataTickMask
 }
+
+func (d *DataHeader) DataComplete() bool {
+	return (d.Flags & FlagUpper2Mask) == FlagDataCompletePattern
+}
+
+func (d *DataHeader) LastInSlot() bool {
+	return (d.Flags & FlagUpper2Mask) == FlagLastInSlotPattern
+}
+
+// fixed legacy name
+func (d *DataHeader) EndOfBatch() bool { return d.DataComplete() }
+func (d *DataHeader) EndOfBlock() bool { return d.LastInSlot() }
