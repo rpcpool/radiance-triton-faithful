@@ -1,8 +1,6 @@
 module go.firedancer.io/radiance
 
-go 1.23.0
-
-toolchain go1.24.4
+go 1.25.0
 
 replace github.com/anjor/carlet => github.com/rpcpool/carlet v0.0.4
 
@@ -47,9 +45,9 @@ require (
 	github.com/tejzpr/ordered-concurrently/v3 v3.0.1
 	github.com/twmb/franz-go v1.12.1
 	github.com/vbauerster/mpb/v8 v8.2.1
-	golang.org/x/crypto v0.37.0
-	golang.org/x/sync v0.13.0
-	golang.org/x/sys v0.32.0
+	golang.org/x/crypto v0.54.0
+	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	google.golang.org/protobuf v1.36.7
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -159,10 +157,10 @@ require (
 	go.uber.org/ratelimit v0.2.0 // indirect
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
-	golang.org/x/net v0.39.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/oauth2 v0.25.0 // indirect
-	golang.org/x/term v0.31.0 // indirect
-	golang.org/x/text v0.24.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/api v0.169.0 // indirect
