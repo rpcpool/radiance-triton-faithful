@@ -226,6 +226,20 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
+	// Limit the number of slots by pruning the schedule itself (not merely
+	// capping the progress counter), so the processed slots match the
+	// end-of-run schedule-vs-CAR consistency check. Otherwise --limit-slots
+	// leaves the schedule larger than what is written and the run fatals at the
+	// end even though the CAR is valid.
+	if *flagLimitSlots > 0 {
+		allSlots := schedule.Slots()
+		if uint64(len(allSlots)) > *flagLimitSlots {
+			cutoff := allSlots[*flagLimitSlots-1]
+			schedule.PruneHigherThan(cutoff)
+			klog.Infof("Limiting slots to %d (pruned schedule at cutoff slot %d)", *flagLimitSlots, cutoff)
+		}
+	}
+
 	slots := schedule.Slots()
 	if len(slots) == 0 {
 		klog.Exitf("No slots to process")
@@ -273,15 +287,6 @@ func run(c *cobra.Command, args []string) {
 			epoch,
 			officialEpochStart,
 			officialEpochStop,
-		)
-	}
-
-	limitSlots := *flagLimitSlots
-	if limitSlots > 0 && limitSlots < totalSlotsToProcess {
-		totalSlotsToProcess = limitSlots
-		klog.Infof(
-			"Limiting slots to %d",
-			limitSlots,
 		)
 	}
 
@@ -368,7 +373,7 @@ func run(c *cobra.Command, args []string) {
 
 	schedule.EnableProgressBar()
 
-	iter := schedule.NewIterator(limitSlots)
+	iter := schedule.NewIterator(*flagLimitSlots)
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
