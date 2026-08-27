@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/gagliardetto/solana-go"
 	"github.com/gagliardetto/solana-go/rpc"
 	solanaerrors "github.com/rpcpool/yellowstone-faithful/solana-errors"
 	"github.com/rpcpool/yellowstone-faithful/third_party/solana_proto/confirmed_block"
@@ -128,21 +127,21 @@ func innerInstructionsToProtobuf(instructions []rpc.InnerInstruction) []*confirm
 	for i, instruction := range instructions {
 		out[i] = &confirmed_block.InnerInstructions{
 			Index:        uint32(instruction.Index),
-			Instructions: solanaCompiledInstructionsToProtobuf(instruction.Instructions),
+			Instructions: rpcCompiledInstructionsToProtobuf(instruction.Instructions),
 		}
 	}
 	return out
 }
 
-func solanaCompiledInstructionsToProtobuf(instructions []solana.CompiledInstruction) []*confirmed_block.InnerInstruction {
+func rpcCompiledInstructionsToProtobuf(instructions []rpc.CompiledInstruction) []*confirmed_block.InnerInstruction {
 	out := make([]*confirmed_block.InnerInstruction, len(instructions))
 	for i, instr := range instructions {
-		out[i] = solanaCompiledInstructionToProtobuf(instr)
+		out[i] = rpcCompiledInstructionToProtobuf(instr)
 	}
 	return out
 }
 
-func solanaCompiledInstructionToProtobuf(instruction solana.CompiledInstruction) *confirmed_block.InnerInstruction {
+func rpcCompiledInstructionToProtobuf(instruction rpc.CompiledInstruction) *confirmed_block.InnerInstruction {
 	return &confirmed_block.InnerInstruction{
 		ProgramIdIndex: uint32(instruction.ProgramIDIndex),
 		Accounts: func() []byte {
