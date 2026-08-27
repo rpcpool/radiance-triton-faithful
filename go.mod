@@ -6,6 +6,8 @@ toolchain go1.24.4
 
 replace github.com/anjor/carlet => github.com/rpcpool/carlet v0.0.4
 
+replace github.com/gagliardetto/solana-go => github.com/solana-foundation/solana-go v1.23.0
+
 require (
 	cloud.google.com/go/bigtable v1.37.0
 	github.com/LiamHaworth/go-tproxy v0.0.0-20190726054950-ef7efd7f24ed
