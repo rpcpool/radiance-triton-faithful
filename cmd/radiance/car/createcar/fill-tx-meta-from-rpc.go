@@ -102,7 +102,7 @@ func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock
 						// continue to the next transaction
 						continue
 					}
-					converted := &binc.TransactionStatusMeta{}
+					converted := &binc.StoredTransactionStatusMeta{}
 					if tx.Meta.Err == nil {
 						converted.Status = &binc.Result__Ok{}
 					} else {
@@ -119,7 +119,7 @@ func (f *BigTableFiller) GetBlock(ctx context.Context, slot uint64) (ParsedBlock
 					}
 					{
 						// sanity check:
-						_, err := binc.BincodeDeserializeTransactionStatusMeta(metaBuf)
+						_, err := binc.BincodeDeserializeStoredTransactionStatusMeta(metaBuf)
 						if err != nil {
 							return nil, fmt.Errorf("sanity check: bincode block %d / tx %s: failed to parse transaction status meta: %w", slot, sig, err)
 						}

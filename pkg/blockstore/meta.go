@@ -20,7 +20,8 @@ type SlotMetaVersion int
 const (
 	SlotMetaUnknown SlotMetaVersion = iota
 	SlotMetaV1                      // legacy: is_connected: bool, completed_data_indexes: BTreeSet<u32>
-	SlotMetaV2                      // current: connected_flags: u8, completed_data_indexes: BitVec<32768>
+	SlotMetaV2                      // connected_flags: u8, completed_data_indexes: BitVec<32768>
+	SlotMetaV3                      // Alpenglow: v2 + parent_block_id: Hash, replay_fec_set_index: u32
 )
 
 func (v SlotMetaVersion) String() string {
@@ -29,6 +30,8 @@ func (v SlotMetaVersion) String() string {
 		return "v1"
 	case SlotMetaV2:
 		return "v2"
+	case SlotMetaV3:
+		return "v3"
 	default:
 		return "unknown"
 	}
@@ -49,6 +52,26 @@ type SlotMeta struct {
 	IsConnected     bool
 	ConnectedFlags  uint8 // only meaningful for v2 (but we set it for v1 too)
 	EntryEndIndexes []uint32
+
+	// Alpenglow (SlotMetaV3) fields; zero for older ledgers.
+	ParentBlockID [32]byte
+	// ReplayFecSetIndex is the shred index where replay starts. Non-zero means an
+	// UpdateParent marker switched the parent and the shreds before it were not executed.
+	ReplayFecSetIndex uint32
+}
+
+// ReplayEntryEndIndexes returns the data-complete shred indexes that belong to the
+// replayed block, i.e. those at or after ReplayFecSetIndex.
+func (s *SlotMeta) ReplayEntryEndIndexes() []uint32 {
+	if s.ReplayFecSetIndex == 0 {
+		return s.EntryEndIndexes
+	}
+	for i, e := range s.EntryEndIndexes {
+		if e >= s.ReplayFecSetIndex {
+			return s.EntryEndIndexes[i:]
+		}
+	}
+	return nil
 }
 
 // DecodeSlotMetaAuto detects v1 vs v2 and decodes accordingly.
@@ -198,6 +221,14 @@ func decodeSlotMetaV2(base *SlotMeta, connectedFlags uint8, r *reader) (*SlotMet
 	if err != nil {
 		return nil, SlotMetaUnknown, err
 	}
+	version := SlotMetaV2
+	// v3 appends parent_block_id: Hash and replay_fec_set_index: u32 (both default on empty read).
+	if r.remaining() >= 32+4 {
+		parentBlockID, _ := r.bytes(32)
+		copy(out.ParentBlockID[:], parentBlockID)
+		out.ReplayFecSetIndex, _ = r.u32()
+		version = SlotMetaV3
+	}
 	if r.remaining() != 0 {
 		// print warning but be permissive and ignore trailing bytes, as Rust's Deserialize does.
 		// fmt.Printf("slotmeta v2: warning: trailing bytes=%d\n", r.remaining())
@@ -210,7 +241,7 @@ func decodeSlotMetaV2(base *SlotMeta, connectedFlags uint8, r *reader) (*SlotMet
 	copy(buf, raw)
 
 	out.EntryEndIndexes = bitvecOnesToU32(buf)
-	return &out, SlotMetaV2, nil
+	return &out, version, nil
 }
 
 func bitvecOnesToU32(buf []byte) []uint32 {

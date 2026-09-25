@@ -82,9 +82,13 @@ func (w blockWorker) Run(
 		w.done(numTx)
 	}()
 	slot := w.slotMeta.Slot
-	entries, err := w.handle.Entries(w.slotMeta)
+	entries, markers, err := w.handle.EntriesAndMarkers(w.slotMeta)
 	if err != nil {
 		return err
+	}
+	footer, err := radianceblockstore.BlockFooterMarker(markers)
+	if err != nil {
+		return fmt.Errorf("slot %d: %w", slot, err)
 	}
 
 	isNewTxMetaKeyFormat := true
@@ -164,6 +168,7 @@ func (w blockWorker) Run(
 		entries,
 		metas,
 		blockRewards,
+		footer,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
@@ -481,6 +486,7 @@ func constructBlock(
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	blockRewardsBlob []byte,
+	footer *radianceblockstore.BlockMarker,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -576,6 +582,11 @@ func constructBlock(
 				} else {
 					qp.MapEntry(ma, "block_height", qp.Int(int64(*blockHeight)))
 				}
+				// Alpenglow: archive the raw block footer marker. Omitted before
+				// Alpenglow so older blocks encode exactly as before.
+				if footer != nil {
+					qp.MapEntry(ma, "block_footer", qp.Bytes(footer.Raw))
+				}
 			}),
 		)
 		qp.MapEntry(ma, "rewards", qp.Link(rewardsNodeLink))
@@ -610,6 +621,8 @@ func buildShredding(
 	entryNum := 0
 	txNum := 0
 	out := make([]ipldbindcode.Shredding, 0)
+	// Batches start at the replay FEC set (see DataShredsToEntries).
+	entryEndIndexes := slotMeta.ReplayEntryEndIndexes()
 	for i, batch := range entries {
 		for j, entry := range batch {
 
@@ -623,11 +636,11 @@ func buildShredding(
 			if j == len(batch)-1 {
 				// We map "last shred of batch" to each "last entry of batch"
 				// so we can reconstruct the shred/entry-batch assignments.
-				if i >= len(slotMeta.EntryEndIndexes) {
+				if i >= len(entryEndIndexes) {
 					return nil, fmt.Errorf("out-of-bounds batch index %d (have %d batches in slot %d)",
-						i, len(slotMeta.EntryEndIndexes), slotMeta.Slot)
+						i, len(entryEndIndexes), slotMeta.Slot)
 				}
-				pos.LastShred = int(slotMeta.EntryEndIndexes[i])
+				pos.LastShred = int(entryEndIndexes[i])
 			}
 
 			out = append(out, ipldbindcode.Shredding{

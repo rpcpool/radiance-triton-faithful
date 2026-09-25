@@ -109,8 +109,11 @@ func sliceSortedByRange[T ordered](list []T, start T, stop T) []T {
 
 type Entries struct {
 	Entries []shred.Entry
-	Raw     []byte
-	Shreds  []shred.Shred
+	// Marker is set (and Entries empty) when this data-complete range holds an
+	// Alpenglow block marker instead of an entry batch.
+	Marker *BlockMarker
+	Raw    []byte
+	Shreds []shred.Shred
 }
 
 func (e *Entries) Slot() uint64 {
@@ -177,6 +180,14 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 		consumed = len(shredsIn)
 	}
 	shreds := shredsIn[:consumed]
+	// After an UpdateParent marker, replay starts at ReplayFecSetIndex; the shreds
+	// before it were built on the abandoned parent and are not part of the block.
+	if start := int(meta.ReplayFecSetIndex); start > 0 {
+		if start >= len(shreds) {
+			return nil, fmt.Errorf("slot %d: replay_fec_set_index=%d beyond consumed=%d", meta.Slot, start, len(shreds))
+		}
+		shreds = shreds[start:]
+	}
 
 	var (
 		out  []Entries
@@ -193,6 +204,33 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 		for {
 			if len(buf) == 0 {
 				return nil
+			}
+
+			// Alpenglow block marker: u64 zero entry count + VersionedBlockMarker.
+			if numEntries, ok := peekU64LE(buf); ok && numEntries == 0 {
+				marker, n, err := ParseBlockMarker(buf[8:])
+				if err == nil {
+					consumedBytes := 8 + n
+					startShred, endShred := segRangeForBytes(segs, consumedBytes)
+					if startShred < 0 || endShred < 0 || endShred >= len(shreds) {
+						return fmt.Errorf("slot %d: shred mapping failed for %s (start=%d end=%d) consumedBytes=%d",
+							meta.Slot, marker.Variant, startShred, endShred, consumedBytes)
+					}
+					out = append(out, Entries{
+						Marker: marker,
+						Raw:    buf[:consumedBytes],
+						Shreds: shreds[startShred : endShred+1],
+					})
+					buf = buf[consumedBytes:]
+					dropFront(&segs, consumedBytes)
+					if boundary && (len(buf) == 0 || isAllZero(buf)) {
+						buf = nil
+						segs = nil
+						return nil
+					}
+					continue
+				}
+				// Not a marker (e.g. zero padding) or not enough bytes yet; fall through.
 			}
 
 			// Snapshot start offset (Decoder doesn't guarantee Position semantics)
