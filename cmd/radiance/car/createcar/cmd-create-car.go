@@ -56,6 +56,7 @@ var (
 	flagNextShredRevisionActivationSlot = flags.Uint64("next-shred-revision-activation-slot", 0, "Next shred revision activation slot; maybe depends on when the validator creating the snapshot upgraded to the latest version.")
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
+	flagStartAtSlot                     = flags.Uint64("start-at-slot", 0, "Start processing at this slot, excluding any slots before it (use with --require-full-epoch=false)")
 	optRocksDBVerifyChecksums           = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
 	//
 	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
@@ -226,6 +227,18 @@ func run(c *cobra.Command, args []string) {
 			schedule.PruneHigherThan(*flagStopAtSlot)
 		} else {
 			klog.Exitf("You specified --stop-at-slot=%d, but this slot is not in the schedule.", *flagStopAtSlot)
+		}
+	}
+
+	if *flagStartAtSlot > 0 {
+		if *flagRequireFullEpoch {
+			klog.Exitf("--start-at-slot=%d produces a partial epoch; also pass --require-full-epoch=false", *flagStartAtSlot)
+		}
+		if schedule.HasSlot(*flagStartAtSlot) {
+			klog.Infof("You specified --start-at-slot=%d; removing all lower slots from schedule.", *flagStartAtSlot)
+			schedule.PruneLowerThan(*flagStartAtSlot)
+		} else {
+			klog.Exitf("You specified --start-at-slot=%d, but this slot is not in the schedule.", *flagStartAtSlot)
 		}
 	}
 

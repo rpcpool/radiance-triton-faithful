@@ -71,6 +71,13 @@ func (s *TraversalSchedule) PruneHigherThan(slot uint64) {
 	s.totalSlotsToProcess = uint64(s.NumSlots())
 }
 
+func (s *TraversalSchedule) PruneLowerThan(slot uint64) {
+	for i := range s.schedule {
+		s.schedule[i].PruneLowerThan(slot)
+	}
+	s.totalSlotsToProcess = uint64(s.NumSlots())
+}
+
 func (s *TraversalSchedule) HasSlot(slot uint64) bool {
 	for _, db := range s.schedule {
 		if contains(db.slots, slot) {
@@ -262,6 +269,16 @@ func (d *DBtoSlots) PruneHigherThan(slot uint64) {
 	var newSlots []uint64
 	for _, s := range d.slots {
 		if s <= slot {
+			newSlots = append(newSlots, s)
+		}
+	}
+	d.slots = newSlots
+}
+
+func (d *DBtoSlots) PruneLowerThan(slot uint64) {
+	var newSlots []uint64
+	for _, s := range d.slots {
+		if s >= slot {
 			newSlots = append(newSlots, s)
 		}
 	}
