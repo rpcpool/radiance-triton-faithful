@@ -28,7 +28,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 		require.NotNil(t, first.Total)
 		require.NotNil(t, first.Data)
 		require.Equal(t, 5, len(first.Data))
-		require.Equal(t, []byte("hello"), first.Data)
+		require.Equal(t, []byte("hello"), []byte(first.Data))
 
 		linkToSecond := **first.Next
 		require.Equal(t, 1, len(linkToSecond))
@@ -40,7 +40,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(second.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte(" world"), decoded.Data)
+			require.Equal(t, []byte(" world"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(second.Data))
 		}
 	}
@@ -61,7 +61,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 		require.NotNil(t, first.Total)
 		require.NotNil(t, first.Data)
 		require.Equal(t, 5, len(first.Data))
-		require.Equal(t, []byte("abcde"), first.Data)
+		require.Equal(t, []byte("abcde"), []byte(first.Data))
 
 		linkToSecond := **first.Next
 		require.Equal(t, 5, len(linkToSecond))
@@ -73,7 +73,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(second.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("fghij"), decoded.Data)
+			require.Equal(t, []byte("fghij"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(second.Data))
 		}
 
@@ -84,7 +84,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(third.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("klmno"), decoded.Data)
+			require.Equal(t, []byte("klmno"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(third.Data))
 		}
 
@@ -95,7 +95,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(fourth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("pqrst"), decoded.Data)
+			require.Equal(t, []byte("pqrst"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(fourth.Data))
 		}
 
@@ -106,7 +106,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(fifth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("uvwxy"), decoded.Data)
+			require.Equal(t, []byte("uvwxy"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(fifth.Data))
 		}
 
@@ -117,7 +117,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(sixth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("z"), decoded.Data)
+			require.Equal(t, []byte("z"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(sixth.Data))
 		}
 	}
@@ -138,7 +138,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 		require.NotNil(t, first.Total)
 		require.NotNil(t, first.Data)
 		require.Equal(t, 5, len(first.Data))
-		require.Equal(t, []byte("abcde"), first.Data)
+		require.Equal(t, []byte("abcde"), []byte(first.Data))
 
 		linksToNext := **first.Next
 		require.Equal(t, 5, len(linksToNext))
@@ -150,7 +150,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(second.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("fghij"), decoded.Data)
+			require.Equal(t, []byte("fghij"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(second.Data))
 			require.Equal(t, 0, len(**decoded.Next))
 		}
@@ -162,7 +162,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(third.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("klmno"), decoded.Data)
+			require.Equal(t, []byte("klmno"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(third.Data))
 			require.Equal(t, 0, len(**decoded.Next))
 		}
@@ -174,7 +174,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(fourth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("pqrst"), decoded.Data)
+			require.Equal(t, []byte("pqrst"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(fourth.Data))
 			require.Equal(t, 0, len(**decoded.Next))
 		}
@@ -186,7 +186,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(fifth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("uvwxy"), decoded.Data)
+			require.Equal(t, []byte("uvwxy"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(fifth.Data))
 			require.Equal(t, 0, len(**decoded.Next))
 		}
@@ -198,7 +198,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 			decoded, err := iplddecoders.DecodeDataFrame(sixth.Data)
 			require.NoError(t, err)
 			require.NotNil(t, decoded)
-			require.Equal(t, []byte("zzyxw"), decoded.Data)
+			require.Equal(t, []byte("zzyxw"), []byte(decoded.Data))
 			fmt.Println(bin.FormatByteSlice(sixth.Data))
 			require.Equal(t, 5, len(**decoded.Next))
 
@@ -212,7 +212,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 				decoded, err := iplddecoders.DecodeDataFrame(second.Data)
 				require.NoError(t, err)
 				require.NotNil(t, decoded)
-				require.Equal(t, []byte("vutsr"), decoded.Data)
+				require.Equal(t, []byte("vutsr"), []byte(decoded.Data))
 				fmt.Println(bin.FormatByteSlice(second.Data))
 				require.Equal(t, 0, len(**decoded.Next))
 			}
@@ -224,7 +224,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 				decoded, err := iplddecoders.DecodeDataFrame(third.Data)
 				require.NoError(t, err)
 				require.NotNil(t, decoded)
-				require.Equal(t, []byte("qponm"), decoded.Data)
+				require.Equal(t, []byte("qponm"), []byte(decoded.Data))
 				fmt.Println(bin.FormatByteSlice(third.Data))
 				require.Equal(t, 0, len(**decoded.Next))
 			}
@@ -236,7 +236,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 				decoded, err := iplddecoders.DecodeDataFrame(fourth.Data)
 				require.NoError(t, err)
 				require.NotNil(t, decoded)
-				require.Equal(t, []byte("lkjih"), decoded.Data)
+				require.Equal(t, []byte("lkjih"), []byte(decoded.Data))
 				fmt.Println(bin.FormatByteSlice(fourth.Data))
 				require.Equal(t, 0, len(**decoded.Next))
 			}
@@ -248,7 +248,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 				decoded, err := iplddecoders.DecodeDataFrame(fifth.Data)
 				require.NoError(t, err)
 				require.NotNil(t, decoded)
-				require.Equal(t, []byte("gfedc"), decoded.Data)
+				require.Equal(t, []byte("gfedc"), []byte(decoded.Data))
 				fmt.Println(bin.FormatByteSlice(fifth.Data))
 				require.Equal(t, 0, len(**decoded.Next))
 			}
@@ -260,7 +260,7 @@ func TestCreateAndStoreFrames(t *testing.T) {
 				decoded, err := iplddecoders.DecodeDataFrame(sixth.Data)
 				require.NoError(t, err)
 				require.NotNil(t, decoded)
-				require.Equal(t, []byte("ba"), decoded.Data)
+				require.Equal(t, []byte("ba"), []byte(decoded.Data))
 				fmt.Println(bin.FormatByteSlice(sixth.Data))
 				require.Equal(t, 0, len(**decoded.Next))
 			}
@@ -300,7 +300,7 @@ func TestCreateRawDataFrames(t *testing.T) {
 	require.Equal(t, "rld", string(frames[2]))
 }
 
-func TestsplitSlice(t *testing.T) {
+func TestSplitSlice(t *testing.T) {
 	elements := []int{1, 2, 3, 4, 5, 6, 7, 8}
 
 	{
