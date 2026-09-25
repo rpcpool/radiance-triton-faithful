@@ -409,8 +409,8 @@ github.com/rogpeppe/go-internal v1.14.1 h1:UQB4HGPB6osV0SQTLymcB4TgvyWu6ZyliaW0t
 github.com/rogpeppe/go-internal v1.14.1/go.mod h1:MaRKkUm5W0goXpeCfT7UZI6fk/L7L7so1lCWt35ZSgc=
 github.com/rpcpool/base58 v1.2.1 h1:TN/EUtK3C3dhrl3QHq6WC9a77+DhwvhhhElsXLzth5M=
 github.com/rpcpool/base58 v1.2.1/go.mod h1:2BuubE67DCSWwVfx37JWNG8emOC0sHEU4/HpcYgCLX8=
-github.com/rpcpool/yellowstone-faithful v0.7.29-0.20260925024920-c50f2e24d24c h1:SXaaDkBzYuAiA6UZzNXTQ+GU/dz7ZmBt1gUZjd+vz5o=
-github.com/rpcpool/yellowstone-faithful v0.7.29-0.20260925024920-c50f2e24d24c/go.mod h1:0u0Iw1wSvwUmPZ6+sCpHCeb+KRfrydDJrF/uq4h4nA4=
+github.com/rpcpool/yellowstone-faithful v0.7.29-rc.1 h1:He7poYZv41LQbFB3Hmfn0KncG6Sj2lLsWsTUPWxBmhA=
+github.com/rpcpool/yellowstone-faithful v0.7.29-rc.1/go.mod h1:0u0Iw1wSvwUmPZ6+sCpHCeb+KRfrydDJrF/uq4h4nA4=
 github.com/russross/blackfriday/v2 v2.0.1/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/segmentio/textio v1.2.0 h1:Ug4IkV3kh72juJbG8azoSBlgebIbUUxVNrfFcKHfTSQ=
