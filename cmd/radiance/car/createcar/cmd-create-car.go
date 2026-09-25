@@ -47,6 +47,8 @@ var (
 	flagWorkers                         = flags.UintP("workers", "w", uint(runtime.NumCPU()), "Number of workers to use")
 	flagOut                             = flags.StringP("out", "o", "", "Output directory")
 	flagDBs                             = flags.StringArray("db", nil, "Path to RocksDB (can be specified multiple times)")
+	flagSecondary                       = flags.Bool("secondary", false, "Open RocksDB in secondary mode (safe against a running validator; catches up to the primary at open)")
+	flagSecondaryPath                   = flags.String("secondary-path", "", "Base directory for secondary-mode info logs (one subdir per --db). Defaults to a temp dir. Only used with --secondary")
 	flagRequireFullEpoch                = flags.Bool("require-full-epoch", true, "Require all blocks in epoch to be present")
 	flagLimitSlots                      = flags.Uint64("limit-slots", 0, "Limit number of slots to process")
 	flagSkipHash                        = flags.Bool("skip-hash", false, "Skip hashing the final CAR file after the generation is complete (for debugging)")
@@ -140,12 +142,42 @@ func run(c *cobra.Command, args []string) {
 	// Open blockstores
 	dbPaths := *flagDBs
 	handles := make([]*blockstore.WalkHandle, len(*flagDBs))
+
+	// Secondary mode reads a live validator's DB without its lock.
+	// Each --db gets its own secondary dir; the default base is private to this run.
+	var secondaryBase string
+	if *flagSecondary {
+		secondaryBase = *flagSecondaryPath
+		if secondaryBase == "" {
+			var err error
+			secondaryBase, err = os.MkdirTemp("", fmt.Sprintf("radiance-secondary-%d-", epoch))
+			if err != nil {
+				klog.Exitf("Failed to create secondary base dir: %s", err)
+			}
+		}
+	}
+
 	for i := range handles {
 		var err error
 		handles[i] = &blockstore.WalkHandle{}
-		handles[i].DB, err = blockstore.OpenReadOnly(dbPaths[i])
-		if err != nil {
-			klog.Exitf("Failed to open blockstore at %s: %s", dbPaths[i], err)
+		if *flagSecondary {
+			secondaryPath := filepath.Join(secondaryBase, fmt.Sprintf("db-%d", i))
+			if err := os.MkdirAll(secondaryPath, 0o755); err != nil {
+				klog.Exitf("Failed to create secondary path %s: %s", secondaryPath, err)
+			}
+			handles[i].DB, err = blockstore.OpenSecondary(dbPaths[i], secondaryPath)
+			if err != nil {
+				klog.Exitf("Failed to open blockstore at %s in secondary mode: %s", dbPaths[i], err)
+			}
+			// Catch up to the primary so the point-in-time view is as fresh as possible.
+			if err := handles[i].DB.DB.TryCatchUpWithPrimary(); err != nil {
+				klog.Exitf("Failed to catch up secondary blockstore at %s: %s", dbPaths[i], err)
+			}
+		} else {
+			handles[i].DB, err = blockstore.OpenReadOnly(dbPaths[i])
+			if err != nil {
+				klog.Exitf("Failed to open blockstore at %s: %s", dbPaths[i], err)
+			}
 		}
 	}
 
@@ -197,6 +229,16 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
+	// Prune the schedule so the processed slots match the end-of-run consistency check.
+	if *flagLimitSlots > 0 {
+		allSlots := schedule.Slots()
+		if uint64(len(allSlots)) > *flagLimitSlots {
+			cutoff := allSlots[*flagLimitSlots-1]
+			schedule.PruneHigherThan(cutoff)
+			klog.Infof("Limiting slots to %d (pruned schedule at cutoff slot %d)", *flagLimitSlots, cutoff)
+		}
+	}
+
 	slots := schedule.Slots()
 	if len(slots) == 0 {
 		klog.Exitf("No slots to process")
@@ -244,15 +286,6 @@ func run(c *cobra.Command, args []string) {
 			epoch,
 			officialEpochStart,
 			officialEpochStop,
-		)
-	}
-
-	limitSlots := *flagLimitSlots
-	if limitSlots > 0 && limitSlots < totalSlotsToProcess {
-		totalSlotsToProcess = limitSlots
-		klog.Infof(
-			"Limiting slots to %d",
-			limitSlots,
 		)
 	}
 
@@ -339,7 +372,8 @@ func run(c *cobra.Command, args []string) {
 
 	schedule.EnableProgressBar()
 
-	iter := schedule.NewIterator(limitSlots)
+	// The schedule is already pruned to --limit-slots; a cap here could stop early on shared slots.
+	iter := schedule.NewIterator(0)
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {

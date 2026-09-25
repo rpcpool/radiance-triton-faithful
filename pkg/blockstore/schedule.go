@@ -68,6 +68,7 @@ func (s *TraversalSchedule) PruneHigherThan(slot uint64) {
 	for i := range s.schedule {
 		s.schedule[i].PruneHigherThan(slot)
 	}
+	s.totalSlotsToProcess = uint64(s.NumSlots())
 }
 
 func (s *TraversalSchedule) HasSlot(slot uint64) bool {
