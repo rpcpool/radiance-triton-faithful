@@ -91,7 +91,7 @@ func getLowestCompletedSlot(d *DB, shredRevision int, nextRevisionActivationSlot
 			return 0, fmt.Errorf(
 				"getLowestCompletedSlot(%s): choked on invalid meta for slot %d", d.DB.Name(), slot)
 		}
-		if ver != SlotMetaV1 && ver != SlotMetaV2 {
+		if ver == SlotMetaUnknown {
 			return 0, fmt.Errorf(
 				"getLowestCompletedSlot(%s): choked on unsupported meta version %d for slot %d", d.DB.Name(), ver, slot)
 		}

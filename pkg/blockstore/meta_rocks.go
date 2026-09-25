@@ -174,7 +174,7 @@ func canRecover(db *DB, iter *grocksdb.Iterator) (uint64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	if ver != SlotMetaV1 && ver != SlotMetaV2 {
+	if ver == SlotMetaUnknown {
 		return 0, false
 	}
 	if meta.ParentSlot == math.MaxUint64 {
@@ -219,7 +219,7 @@ func (d *DB) GetSlotMeta(slot uint64) (*SlotMeta, error) {
 		if err != nil {
 			return nil, err
 		}
-		if v != SlotMetaV1 && v != SlotMetaV2 {
+		if v == SlotMetaUnknown {
 			return nil, fmt.Errorf("unknown slot meta version %d for slot %d", v, slot)
 		}
 		if decoded == nil {
