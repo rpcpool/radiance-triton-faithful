@@ -143,14 +143,17 @@ func run(c *cobra.Command, args []string) {
 	dbPaths := *flagDBs
 	handles := make([]*blockstore.WalkHandle, len(*flagDBs))
 
-	// Secondary mode reads a DB still owned by a running validator without
-	// taking its lock, and tolerates the primary's compactions. Each primary
-	// needs its own info-log dir, so give every --db a distinct subdir.
+	// Secondary mode reads a live validator's DB without its lock.
+	// Each --db gets its own secondary dir; the default base is private to this run.
 	var secondaryBase string
 	if *flagSecondary {
 		secondaryBase = *flagSecondaryPath
 		if secondaryBase == "" {
-			secondaryBase = filepath.Join(os.TempDir(), fmt.Sprintf("radiance-secondary-%d", epoch))
+			var err error
+			secondaryBase, err = os.MkdirTemp("", fmt.Sprintf("radiance-secondary-%d-", epoch))
+			if err != nil {
+				klog.Exitf("Failed to create secondary base dir: %s", err)
+			}
 		}
 	}
 
@@ -226,11 +229,7 @@ func run(c *cobra.Command, args []string) {
 		}
 	}
 
-	// Limit the number of slots by pruning the schedule itself (not merely
-	// capping the progress counter), so the processed slots match the
-	// end-of-run schedule-vs-CAR consistency check. Otherwise --limit-slots
-	// leaves the schedule larger than what is written and the run fatals at the
-	// end even though the CAR is valid.
+	// Prune the schedule so the processed slots match the end-of-run consistency check.
 	if *flagLimitSlots > 0 {
 		allSlots := schedule.Slots()
 		if uint64(len(allSlots)) > *flagLimitSlots {
@@ -373,7 +372,8 @@ func run(c *cobra.Command, args []string) {
 
 	schedule.EnableProgressBar()
 
-	iter := schedule.NewIterator(*flagLimitSlots)
+	// The schedule is already pruned to --limit-slots; a cap here could stop early on shared slots.
+	iter := schedule.NewIterator(0)
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
