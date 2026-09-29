@@ -30,6 +30,7 @@ import (
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
 	firecar "go.firedancer.io/radiance/pkg/ipld/car"
 	"go.firedancer.io/radiance/pkg/shred"
+	"go.firedancer.io/radiance/pkg/slotedges"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"k8s.io/klog/v2"
@@ -863,7 +864,7 @@ func (cw *Multistage) FinalizeDAG(
 
 	klog.Infof("Got list of %d slots", len(allSlots))
 
-	numSlotsPerSubset := 432000 / 18 // TODO: make this configurable
+	numSlotsPerSubset := int(slotedges.CurrentEpochSchedule().SlotsInEpoch(epoch)) / 18 // TODO: make this configurable
 
 	schedule := SplitSlotsIntoRanges(numSlotsPerSubset, allSlots)
 
