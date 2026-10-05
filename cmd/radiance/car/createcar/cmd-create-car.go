@@ -57,6 +57,7 @@ var (
 	flagCheckOnly                       = flags.Bool("check", false, "Only check if the data is available, without creating the CAR file")
 	flagStopAtSlot                      = flags.Uint64("stop-at-slot", 0, "Stop processing at this slot, excluding any slots after it")
 	flagStartAtSlot                     = flags.Uint64("start-at-slot", 0, "Start processing at this slot, excluding any slots before it (use with --require-full-epoch=false)")
+	flagCluster                         = flags.String("cluster", "mainnet", "Cluster whose epoch schedule defines the epoch's slot range (mainnet, devnet, testnet)")
 	optRocksDBVerifyChecksums           = flags.Bool("rocksdb-verify-checksums", true, "Verify checksums of data read from RocksDB")
 	//
 	flagAllowMissingTxMeta = flags.Bool("allow-missing-tx-meta", false, "Allow missing transaction metadata")
@@ -120,6 +121,14 @@ func run(c *cobra.Command, args []string) {
 	if *flagRequireFullEpoch && *flagLimitSlots > 0 {
 		klog.Exitf("Cannot use both --require-full-epoch and --limit-slots")
 	}
+
+	epochSchedule, err := slotedges.EpochScheduleForCluster(*flagCluster)
+	if err != nil {
+		klog.Exitf("Invalid --cluster: %s", err)
+	}
+	checkGenesisEpochSchedule(*flagDBs, *flagCluster, epochSchedule)
+	slotedges.SetEpochSchedule(epochSchedule)
+	klog.Infof("Epoch schedule (%s): %s", *flagCluster, epochSchedule)
 
 	if finalCARFilepath == "" {
 		klog.Exitf("Output CAR filepath is required")
