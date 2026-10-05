@@ -100,7 +100,7 @@ func main() {
 						spew.Dump(tx.Meta)
 
 						{
-							converted := &binc.TransactionStatusMeta{}
+							converted := &binc.StoredTransactionStatusMeta{}
 							if tx.Meta.Err == nil {
 								converted.Status = &binc.Result__Ok{}
 							} else {
@@ -116,7 +116,7 @@ func main() {
 								panic(err)
 							}
 							{
-								re, err := binc.BincodeDeserializeTransactionStatusMeta(marshaled)
+								re, err := binc.BincodeDeserializeStoredTransactionStatusMeta(marshaled)
 								if err != nil {
 									panic(err)
 								}

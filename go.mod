@@ -1,8 +1,6 @@
 module go.firedancer.io/radiance
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.24.4
 
 replace github.com/anjor/carlet => github.com/rpcpool/carlet v0.0.4
 
@@ -23,7 +21,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/gopacket v1.1.19
 	github.com/google/nftables v0.1.0
-	github.com/ipfs/go-cid v0.4.1
+	github.com/ipfs/go-cid v0.5.0
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ipfs-blockstore v1.3.0
 	github.com/ipfs/go-ipfs-chunker v0.0.6
@@ -40,7 +38,7 @@ require (
 	github.com/multiformats/go-varint v0.0.7
 	github.com/novifinancial/serde-reflection/serde-generate/runtime/golang v0.0.0-20220519162058-e5cd3c3b3f3a
 	github.com/prometheus/client_golang v1.18.0
-	github.com/rpcpool/yellowstone-faithful v0.7.1
+	github.com/rpcpool/yellowstone-faithful v0.7.29-rc.1
 	github.com/segmentio/textio v1.2.0
 	github.com/slok/go-http-metrics v0.10.0
 	github.com/spaolacci/murmur3 v1.1.0
@@ -72,13 +70,17 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blendle/zapdriver v1.3.1 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/sonic v1.15.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
 	github.com/dgraph-io/ristretto v1.0.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.8.0 // indirect
 	github.com/gagliardetto/treeout v0.1.4 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
@@ -114,11 +116,11 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/josharian/native v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
-	github.com/mattn/go-runewidth v0.0.14 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/mdlayher/netlink v1.6.0 // indirect
 	github.com/mdlayher/socket v0.2.3 // indirect
@@ -142,12 +144,14 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.45.0 // indirect
 	github.com/prometheus/procfs v0.12.0 // indirect
-	github.com/rivo/uniseg v0.4.4 // indirect
+	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/smartystreets/assertions v1.13.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/streamingfast/logging v0.0.0-20250404134358-92b15d2fbd2e // indirect
+	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/twmb/franz-go/pkg/kmsg v1.4.0 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	github.com/whyrusleeping/cbor v0.0.0-20171005072247-63513f603b11 // indirect
 	github.com/whyrusleeping/cbor-gen v0.0.0-20230818171029-f91ae536ca25 // indirect
@@ -167,7 +171,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/ratelimit v0.3.1 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/exp v0.0.0-20231006140011-7918f672742d // indirect
+	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
+	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/oauth2 v0.34.0 // indirect
 	golang.org/x/term v0.39.0 // indirect
@@ -181,3 +186,5 @@ require (
 	google.golang.org/grpc v1.80.0 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
+
+replace github.com/mr-tron/base58 => github.com/rpcpool/base58 v1.2.1
