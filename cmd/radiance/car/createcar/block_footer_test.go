@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
 	"github.com/stretchr/testify/require"
 	radianceblockstore "go.firedancer.io/radiance/pkg/blockstore"
@@ -23,7 +24,7 @@ func TestConstructBlock_BlockFooter(t *testing.T) {
 	}
 	height := uint64(90)
 
-	build := func(footer *radianceblockstore.BlockMarker) []byte {
+	build := func(footer *blockmarker.Marker) []byte {
 		ms := newMemoryBlockstore(slotMeta.Slot, slotMeta.ParentSlot)
 		link, err := constructBlock(ms, slotMeta, 1700000000, &height, entries, nil, nil, footer)
 		require.NoError(t, err)
@@ -47,8 +48,8 @@ func TestConstructBlock_BlockFooter(t *testing.T) {
 
 	t.Run("with footer", func(t *testing.T) {
 		raw := []byte{1, 0, 0, 3, 0, 1, 2, 3}
-		block, err := iplddecoders.DecodeBlock(build(&radianceblockstore.BlockMarker{
-			Variant: radianceblockstore.BlockMarkerFooter,
+		block, err := iplddecoders.DecodeBlock(build(&blockmarker.Marker{
+			Variant: blockmarker.VariantFooter,
 			Raw:     raw,
 		}))
 		require.NoError(t, err)

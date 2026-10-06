@@ -21,6 +21,7 @@ import (
 	"github.com/ipld/go-ipld-prime/schema"
 	"github.com/klauspost/compress/zstd"
 	"github.com/multiformats/go-multicodec"
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
 	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
 	solanablockrewards "github.com/rpcpool/yellowstone-faithful/solana-block-rewards"
@@ -487,7 +488,7 @@ func constructBlock(
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	blockRewardsBlob []byte,
-	footer *radianceblockstore.BlockMarker,
+	footer *blockmarker.Marker,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {

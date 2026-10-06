@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	bin "github.com/gagliardetto/binary"
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"go.firedancer.io/radiance/pkg/shred"
 )
 
@@ -111,7 +112,7 @@ type Entries struct {
 	Entries []shred.Entry
 	// Marker is set (and Entries empty) when this data-complete range holds an
 	// Alpenglow block marker instead of an entry batch.
-	Marker *BlockMarker
+	Marker *blockmarker.Marker
 	Raw    []byte
 	Shreds []shred.Shred
 }
@@ -208,7 +209,7 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 
 			// Alpenglow block marker: u64 zero entry count + VersionedBlockMarker.
 			if numEntries, ok := peekU64LE(buf); ok && numEntries == 0 {
-				marker, n, err := ParseBlockMarker(buf[8:])
+				marker, n, err := blockmarker.ParsePrefix(buf[8:])
 				if err == nil {
 					consumedBytes := 8 + n
 					startShred, endShred := segRangeForBytes(segs, consumedBytes)

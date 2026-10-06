@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"go.firedancer.io/radiance/pkg/shred"
 )
 
@@ -48,7 +49,7 @@ func (wh *WalkHandle) Entries(meta *SlotMeta) ([][]shred.Entry, error) {
 // EntriesAndMarkers returns the entry batches of a slot and its Alpenglow block
 // markers. A data-complete range holding a marker yields an empty batch, so batch
 // i still lines up with meta.ReplayEntryEndIndexes()[i].
-func (wh *WalkHandle) EntriesAndMarkers(meta *SlotMeta) ([][]shred.Entry, []*BlockMarker, error) {
+func (wh *WalkHandle) EntriesAndMarkers(meta *SlotMeta) ([][]shred.Entry, []*blockmarker.Marker, error) {
 	// TODO: handle concurrent calls to Entries() on the same WalkHandle.
 	if wh.nextShredRevisionActivationSlot != nil && meta.Slot >= *wh.nextShredRevisionActivationSlot {
 		wh.shredRevision++
@@ -59,7 +60,7 @@ func (wh *WalkHandle) EntriesAndMarkers(meta *SlotMeta) ([][]shred.Entry, []*Blo
 		return nil, nil, err
 	}
 	batches := make([][]shred.Entry, len(mapping))
-	var markers []*BlockMarker
+	var markers []*blockmarker.Marker
 	for i, batch := range mapping {
 		batches[i] = batch.Entries
 		if batch.Marker != nil {
@@ -70,14 +71,14 @@ func (wh *WalkHandle) EntriesAndMarkers(meta *SlotMeta) ([][]shred.Entry, []*Blo
 }
 
 // BlockFooterMarker returns the BlockFooter marker among markers, if any.
-func BlockFooterMarker(markers []*BlockMarker) (*BlockMarker, error) {
-	var footer *BlockMarker
+func BlockFooterMarker(markers []*blockmarker.Marker) (*blockmarker.Marker, error) {
+	var footer *blockmarker.Marker
 	for _, m := range markers {
-		if m.Variant != BlockMarkerFooter {
+		if m.Variant != blockmarker.VariantFooter {
 			continue
 		}
 		if footer != nil {
-			return nil, fmt.Errorf("%w: multiple block footers", ErrInvalidBlockMarker)
+			return nil, fmt.Errorf("%w: multiple block footers", blockmarker.ErrInvalid)
 		}
 		footer = m
 	}
