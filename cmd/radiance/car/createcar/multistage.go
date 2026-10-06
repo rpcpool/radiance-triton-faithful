@@ -151,6 +151,15 @@ func (w blockWorker) Run(
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
+	// Only Alpenglow blocks (which always carry markers) have a block id.
+	var blockID []byte
+	if len(markers) > 0 {
+		id, err := w.handle.DB.GetBlockID(slot)
+		if err != nil {
+			return fmt.Errorf("failed to get block id for slot %d: %w", slot, err)
+		}
+		blockID = id[:]
+	}
 	// if true {
 	// 	rewards = getRandomBytes(10 * MiB)
 	// }
@@ -167,6 +176,7 @@ func (w blockWorker) Run(
 		metas,
 		blockRewards,
 		markers,
+		blockID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
@@ -485,6 +495,7 @@ func constructBlock(
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	blockRewardsBlob []byte,
 	markers []*blockmarker.Marker,
+	blockID []byte,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -590,6 +601,9 @@ func constructBlock(
 							qp.ListEntry(la, qp.Bytes(m.Raw))
 						}
 					}))
+					if blockID != nil {
+						qp.MapEntry(ma, "block_id", qp.Bytes(blockID))
+					}
 				}
 			}),
 		)

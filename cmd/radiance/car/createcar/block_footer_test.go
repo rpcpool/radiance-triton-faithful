@@ -45,12 +45,13 @@ func testShred(index uint32, flags uint8, payload []byte) shred.Shred {
 var (
 	testHeader       = testMarker(blockmarker.VariantHeader, append([]byte{1}, make([]byte, 40)...))
 	testUpdateParent = testMarker(blockmarker.VariantUpdateParent, append([]byte{1}, bytes.Repeat([]byte{7}, 40)...))
+	testBlockID      = bytes.Repeat([]byte{0x42}, 32)
 	testFooter       = testMarker(blockmarker.VariantFooter, append(append([]byte{1}, make([]byte, 40)...), 2, 'u', 'a', 0, 0, 0))
 )
 
 // buildTestBlock runs the CAR path for one slot (deshred, split markers,
 // construct) and returns the decoded block and its raw CBOR.
-func buildTestBlock(t *testing.T, meta *radianceblockstore.SlotMeta, shreds []shred.Shred) (*ipldbindcode.Block, []byte) {
+func buildTestBlock(t *testing.T, meta *radianceblockstore.SlotMeta, shreds []shred.Shred, blockID []byte) (*ipldbindcode.Block, []byte) {
 	t.Helper()
 	mapping, err := radianceblockstore.DataShredsToEntries(meta, shreds)
 	require.NoError(t, err)
@@ -59,7 +60,7 @@ func buildTestBlock(t *testing.T, meta *radianceblockstore.SlotMeta, shreds []sh
 
 	height := uint64(90)
 	ms := newMemoryBlockstore(meta.Slot, meta.ParentSlot)
-	link, err := constructBlock(ms, meta, 1700000000, &height, entries, nil, nil, markers)
+	link, err := constructBlock(ms, meta, 1700000000, &height, entries, nil, nil, markers, blockID)
 	require.NoError(t, err)
 	raw, ok := ms.getBlock(link.(cidlink.Link).Cid)
 	require.True(t, ok)
@@ -96,7 +97,7 @@ func TestConstructBlock_PreAlpenglow(t *testing.T) {
 		testShred(0, shred.FlagDataCompletePattern, testBatch(1, 0xaa)),
 		testShred(1, 0, batch[:20]),
 		testShred(2, shred.FlagLastInSlotPattern, batch[20:]),
-	})
+	}, nil)
 
 	require.EqualValues(t, 3, slotMetaLen(t, raw))
 	_, ok := block.GetBlockMarkers()
@@ -121,7 +122,7 @@ func TestConstructBlock_HeaderAndFooter(t *testing.T) {
 		testShred(1, shred.FlagDataCompletePattern, testBatch(1, 0xaa)),
 		testShred(2, shred.FlagDataCompletePattern, testFooter),
 		testShred(3, shred.FlagLastInSlotPattern, append(testBatch(1, 0xcc), make([]byte, 16)...)),
-	})
+	}, testBlockID)
 
 	markers, ok := block.GetBlockMarkers()
 	require.True(t, ok)
@@ -130,6 +131,9 @@ func TestConstructBlock_HeaderAndFooter(t *testing.T) {
 	footer, ok := block.GetBlockFooter()
 	require.True(t, ok)
 	require.Equal(t, testFooter[8:], footer)
+	id, ok := block.GetBlockID()
+	require.True(t, ok)
+	require.Equal(t, testBlockID, id)
 	// Marker batches stay in the batch list, so entries keep their data-complete index.
 	require.Equal(t, []int{1, 3}, shredEndIdxs(block))
 }
@@ -148,11 +152,14 @@ func TestConstructBlock_UpdateParent(t *testing.T) {
 		testShred(4, shred.FlagDataCompletePattern, testBatch(5, 0x03)),
 		testShred(5, shred.FlagDataCompletePattern, testFooter),
 		testShred(6, shred.FlagLastInSlotPattern, testBatch(1, 0x04)),
-	})
+	}, testBlockID)
 
 	markers, ok := block.GetBlockMarkers()
 	require.True(t, ok)
 	require.Equal(t, [][]byte{testHeader[8:], testUpdateParent[8:], testFooter[8:]}, markers)
+	id, ok := block.GetBlockID()
+	require.True(t, ok)
+	require.Equal(t, testBlockID, id)
 	// Only the replayed entries are archived, mapped to the same shreds as before.
 	require.Len(t, block.Entries, 2)
 	require.Equal(t, []int{4, 6}, shredEndIdxs(block))
