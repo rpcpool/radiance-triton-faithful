@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"testing"
 
+	"github.com/gagliardetto/solana-go"
 	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -73,39 +74,112 @@ func TestDataShredsToEntries_BlockMarkers(t *testing.T) {
 	assert.Equal(t, footer[8:], entries[2].Marker.Raw)
 	assert.Equal(t, shreds[2:3], entries[2].Shreds)
 
-	markers := []*blockmarker.Marker{entries[0].Marker, entries[2].Marker}
-	got, err := BlockFooterMarker(markers)
+	batches, markers, err := SplitMarkers(meta, entries)
 	require.NoError(t, err)
-	assert.Same(t, entries[2].Marker, got)
-
-	_, err = BlockFooterMarker([]*blockmarker.Marker{got, got})
-	assert.ErrorIs(t, err, blockmarker.ErrInvalid)
+	assert.Equal(t, []*blockmarker.Marker{entries[0].Marker, entries[2].Marker}, markers)
+	assert.Len(t, batches, 3)
 }
 
-func TestDataShredsToEntries_UpdateParentSkipsPrefix(t *testing.T) {
+func TestDataShredsToEntries_UpdateParent(t *testing.T) {
+	header := marker(blockmarker.VariantHeader, make([]byte, 41))
 	shreds := []shred.Shred{
-		dataShred(0, shred.FlagDataCompletePattern, entryBatch(1, 0x01)), // built on the abandoned parent
-		dataShred(1, shred.FlagDataCompletePattern, marker(blockmarker.VariantUpdateParent, make([]byte, 41))),
-		dataShred(2, shred.FlagLastInSlotPattern, entryBatch(2, 0x02)),
+		dataShred(0, shred.FlagDataCompletePattern, header),
+		dataShred(1, shred.FlagDataCompletePattern, entryBatch(1, 0x01)), // built on the abandoned parent
+		dataShred(2, shred.FlagDataCompletePattern, marker(blockmarker.VariantUpdateParent, make([]byte, 41))),
+		dataShred(3, shred.FlagDataCompletePattern, entryBatch(2, 0x02)),
+		dataShred(4, shred.FlagDataCompletePattern, marker(blockmarker.VariantFooter, footerPayload([32]byte{9}, 42, "ua"))),
+		dataShred(5, shred.FlagLastInSlotPattern, entryBatch(1, 0x03)),
 	}
 	meta := &SlotMeta{
-		Consumed:          3,
-		Received:          3,
-		LastIndex:         2,
-		EntryEndIndexes:   []uint32{0, 1, 2},
-		ReplayFecSetIndex: 1,
+		Consumed:          6,
+		Received:          6,
+		LastIndex:         5,
+		EntryEndIndexes:   []uint32{0, 1, 2, 3, 4, 5},
+		ReplayFecSetIndex: 2,
 	}
 
 	entries, err := DataShredsToEntries(meta, shreds)
 	require.NoError(t, err)
-	require.Len(t, entries, 2)
-	require.NotNil(t, entries[0].Marker)
-	assert.Equal(t, blockmarker.VariantUpdateParent, entries[0].Marker.Variant)
-	require.Len(t, entries[1].Entries, 1)
-	assert.Equal(t, uint64(2), entries[1].Entries[0].NumHashes)
-	assert.Equal(t, shreds[2:3], entries[1].Shreds)
+	require.Len(t, entries, 5)
+	// The header comes from before the replay index; the abandoned batch is dropped.
+	assert.True(t, entries[0].BeforeReplay)
+	assert.Equal(t, header[8:], entries[0].Marker.Raw)
+	assert.Equal(t, shreds[0:1], entries[0].Shreds)
+	assert.False(t, entries[1].BeforeReplay)
+	assert.Equal(t, blockmarker.VariantUpdateParent, entries[1].Marker.Variant)
+	assert.Equal(t, shreds[3:4], entries[2].Shreds)
 
-	assert.Equal(t, []uint32{1, 2}, meta.ReplayEntryEndIndexes())
+	batches, markers, err := SplitMarkers(meta, entries)
+	require.NoError(t, err)
+	var variants []blockmarker.Variant
+	for _, m := range markers {
+		variants = append(variants, m.Variant)
+	}
+	assert.Equal(t, []blockmarker.Variant{blockmarker.VariantHeader, blockmarker.VariantUpdateParent, blockmarker.VariantFooter}, variants)
+	// Batches line up with the replayed data-complete indexes.
+	assert.Equal(t, []uint32{2, 3, 4, 5}, meta.ReplayEntryEndIndexes())
+	require.Len(t, batches, 4)
+	assert.Empty(t, batches[0])
+	assert.Equal(t, uint64(2), batches[1][0].NumHashes)
+	assert.Empty(t, batches[2])
+	assert.Equal(t, uint64(1), batches[3][0].NumHashes)
+}
+
+func TestDataShredsToEntries_UnfinishedPrefix(t *testing.T) {
+	batch := entryBatch(1, 0x01)
+	shreds := []shred.Shred{
+		dataShred(0, shred.FlagDataCompletePattern, marker(blockmarker.VariantHeader, make([]byte, 41))),
+		dataShred(1, 0, batch[:10]), // abandoned mid-batch
+		dataShred(2, shred.FlagDataCompletePattern, marker(blockmarker.VariantUpdateParent, make([]byte, 41))),
+		dataShred(3, shred.FlagLastInSlotPattern, entryBatch(2, 0x02)),
+	}
+	meta := &SlotMeta{Consumed: 4, Received: 4, LastIndex: 3, EntryEndIndexes: []uint32{0, 2, 3}, ReplayFecSetIndex: 2}
+
+	entries, err := DataShredsToEntries(meta, shreds)
+	require.NoError(t, err)
+	require.Len(t, entries, 3)
+	assert.True(t, entries[0].BeforeReplay)
+	assert.Equal(t, uint64(2), entries[2].Entries[0].NumHashes)
+}
+
+func TestValidateMarkerLayout(t *testing.T) {
+	m := func(v blockmarker.Variant) Entries { return Entries{Marker: &blockmarker.Marker{Variant: v}} }
+	batch := Entries{Entries: []shred.Entry{{NumHashes: 1}}}
+	txBatch := Entries{Entries: []shred.Entry{{Txns: make([]solana.Transaction, 1)}}}
+	var (
+		header  = m(blockmarker.VariantHeader)
+		footer  = m(blockmarker.VariantFooter)
+		update  = m(blockmarker.VariantUpdateParent)
+		genesis = m(blockmarker.VariantGenesisCertificate)
+	)
+
+	valid := map[string][]Entries{
+		"minimal":        {header, footer},
+		"full":           {header, genesis, batch, update, batch, footer, batch},
+		"update parent":  {header, batch, update, batch, footer, batch},
+		"genesis cert":   {header, genesis, footer, batch},
+		"no final ticks": {header, batch, footer},
+	}
+	for name, entries := range valid {
+		assert.NoError(t, ValidateMarkerLayout(entries), name)
+	}
+
+	invalid := map[string][]Entries{
+		"no header":                     {batch, footer, batch},
+		"two headers":                   {header, header, footer},
+		"header not first":              {batch, header, footer},
+		"no footer":                     {header, batch},
+		"two footers":                   {header, footer, footer},
+		"two update parents":            {header, update, batch, update, footer},
+		"two genesis certs":             {header, genesis, genesis, footer},
+		"genesis cert not after header": {header, batch, genesis, footer},
+		"marker after footer":           {header, footer, update},
+		"two batches after footer":      {header, footer, batch, batch},
+		"transactions after footer":     {header, footer, txBatch},
+	}
+	for name, entries := range invalid {
+		assert.ErrorIs(t, ValidateMarkerLayout(entries), blockmarker.ErrInvalid, name)
+	}
 }
 
 func TestDecodeSlotMetaAuto_V3(t *testing.T) {

@@ -88,10 +88,6 @@ func (w blockWorker) Run(
 	if err != nil {
 		return err
 	}
-	footer, err := radianceblockstore.BlockFooterMarker(markers)
-	if err != nil {
-		return fmt.Errorf("slot %d: %w", slot, err)
-	}
 
 	isNewTxMetaKeyFormat := true
 	if txMetaNewFormatOverride != nil {
@@ -170,7 +166,7 @@ func (w blockWorker) Run(
 		entries,
 		metas,
 		blockRewards,
-		footer,
+		markers,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
@@ -488,7 +484,7 @@ func constructBlock(
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	blockRewardsBlob []byte,
-	footer *blockmarker.Marker,
+	markers []*blockmarker.Marker,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -584,10 +580,16 @@ func constructBlock(
 				} else {
 					qp.MapEntry(ma, "block_height", qp.Int(int64(*blockHeight)))
 				}
-				// Alpenglow: archive the raw block footer marker. Omitted before
-				// Alpenglow so older blocks encode exactly as before.
-				if footer != nil {
-					qp.MapEntry(ma, "block_footer", qp.Bytes(footer.Raw))
+				// Alpenglow: archive every raw block marker in block order. Omitted
+				// before Alpenglow so older blocks encode exactly as before.
+				if len(markers) > 0 {
+					// block_footer is kept only for older CARs; new ones carry the footer in block_markers.
+					qp.MapEntry(ma, "block_footer", qp.Null())
+					qp.MapEntry(ma, "block_markers", qp.List(int64(len(markers)), func(la datamodel.ListAssembler) {
+						for _, m := range markers {
+							qp.ListEntry(la, qp.Bytes(m.Raw))
+						}
+					}))
 				}
 			}),
 		)
