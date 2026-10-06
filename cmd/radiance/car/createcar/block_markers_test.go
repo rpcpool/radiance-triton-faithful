@@ -117,17 +117,18 @@ func TestConstructBlock_HeaderAndFooter(t *testing.T) {
 		Slot: 100, ParentSlot: 99, Consumed: 4, Received: 4, LastIndex: 3,
 		EntryEndIndexes: []uint32{0, 1, 2, 3},
 	}
-	block, _ := buildTestBlock(t, meta, []shred.Shred{
+	shreds := []shred.Shred{
 		testShred(0, shred.FlagDataCompletePattern, testHeader),
 		testShred(1, shred.FlagDataCompletePattern, testBatch(1, 0xaa)),
 		testShred(2, shred.FlagDataCompletePattern, testFooter),
 		testShred(3, shred.FlagLastInSlotPattern, append(testBatch(1, 0xcc), make([]byte, 16)...)),
-	}, testBlockID)
+	}
+	block, raw := buildTestBlock(t, meta, shreds, testBlockID)
 
+	require.EqualValues(t, 5, slotMetaLen(t, raw))
 	markers, ok := block.GetBlockMarkers()
 	require.True(t, ok)
 	require.Equal(t, [][]byte{testHeader[8:], testFooter[8:]}, markers)
-	require.True(t, block.Meta.Block_footer == nil || *block.Meta.Block_footer == nil, "block_footer must stay null")
 	footer, ok := block.GetBlockFooter()
 	require.True(t, ok)
 	require.Equal(t, testFooter[8:], footer)
@@ -136,6 +137,17 @@ func TestConstructBlock_HeaderAndFooter(t *testing.T) {
 	require.Equal(t, testBlockID, id)
 	// Marker batches stay in the batch list, so entries keep their data-complete index.
 	require.Equal(t, []int{1, 3}, shredEndIdxs(block))
+
+	// Without a block id the tuple stops at block_markers.
+	block, raw = buildTestBlock(t, meta, shreds, nil)
+	require.EqualValues(t, 4, slotMetaLen(t, raw))
+	markers, ok = block.GetBlockMarkers()
+	require.True(t, ok)
+	require.Equal(t, [][]byte{testHeader[8:], testFooter[8:]}, markers)
+	_, ok = block.GetBlockFooter()
+	require.True(t, ok)
+	_, ok = block.GetBlockID()
+	require.False(t, ok)
 }
 
 func TestConstructBlock_UpdateParent(t *testing.T) {

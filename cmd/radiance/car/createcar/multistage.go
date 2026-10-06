@@ -594,8 +594,6 @@ func constructBlock(
 				// Alpenglow: archive every raw block marker in block order. Omitted
 				// before Alpenglow so older blocks encode exactly as before.
 				if len(markers) > 0 {
-					// block_footer is kept only for older CARs; new ones carry the footer in block_markers.
-					qp.MapEntry(ma, "block_footer", qp.Null())
 					qp.MapEntry(ma, "block_markers", qp.List(int64(len(markers)), func(la datamodel.ListAssembler) {
 						for _, m := range markers {
 							qp.ListEntry(la, qp.Bytes(m.Raw))
