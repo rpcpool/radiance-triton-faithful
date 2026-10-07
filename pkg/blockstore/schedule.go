@@ -385,31 +385,37 @@ func NewSchedule(
 	officialEpochStart, officialEpochStop := slotedges.CalcEpochLimits(epoch)
 	haveStart, haveStop := slotEdges(handles)
 
-	var startFrom, stopAt uint64
-	if requireFullEpoch {
-		startFrom, stopAt = officialEpochStart, officialEpochStop
-	} else {
-		startFrom, stopAt = haveStart, haveStop
-	}
-
-	if !slotedges.Uint64RangesHavePartialOverlapIncludingEdges(
-		[2]uint64{officialEpochStart, officialEpochStop},
-		[2]uint64{startFrom, stopAt},
-	) {
-		klog.Exitf(
-			"no overlap between requested epoch [%d:%d] and available slots [%d:%d]",
-			officialEpochStart, officialEpochStop,
-			startFrom, stopAt,
-		)
+	startFrom, stopAt, err := scheduleEdges(officialEpochStart, officialEpochStop, haveStart, haveStop, requireFullEpoch)
+	if err != nil {
+		klog.Exit(err)
 	}
 
 	schedule := new(TraversalSchedule)
-	err := schedule.init(epoch, startFrom, stopAt, requireFullEpoch, handles, shredRevision, activationSlot)
+	err = schedule.init(epoch, startFrom, stopAt, requireFullEpoch, handles, shredRevision, activationSlot)
 	if err != nil {
 		return nil, err
 	}
 	schedule.totalSlotsToProcess = uint64(schedule.NumSlots())
 	return schedule, nil
+}
+
+// scheduleEdges returns the slot range to walk: the whole epoch, or for a partial
+// epoch the part of it the DBs have. Slots outside the epoch never go into its CAR.
+func scheduleEdges(epochStart, epochStop, haveStart, haveStop uint64, requireFullEpoch bool) (uint64, uint64, error) {
+	if requireFullEpoch {
+		return epochStart, epochStop, nil
+	}
+	if !slotedges.Uint64RangesHavePartialOverlapIncludingEdges(
+		[2]uint64{epochStart, epochStop},
+		[2]uint64{haveStart, haveStop},
+	) {
+		return 0, 0, fmt.Errorf(
+			"no overlap between requested epoch [%d:%d] and available slots [%d:%d]",
+			epochStart, epochStop,
+			haveStart, haveStop,
+		)
+	}
+	return max(haveStart, epochStart), min(haveStop, epochStop), nil
 }
 
 func (s *TraversalSchedule) Close() error {
