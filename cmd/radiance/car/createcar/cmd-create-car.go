@@ -399,7 +399,8 @@ func run(c *cobra.Command, args []string) {
 	err = iter.Iterate(
 		c.Context(),
 		func(dbIdex int, h *blockstore.WalkHandle, slot uint64, shredRevision int) error {
-			if *flagRequireFullEpoch && slotedges.CalcEpochForSlot(slot) != epoch {
+			// The schedule includes the parent of the epoch's first slot; it belongs to the previous epoch's CAR.
+			if slotedges.CalcEpochForSlot(slot) != epoch {
 				return nil
 			}
 			slotMeta, err := h.DB.GetSlotMeta(slot)
