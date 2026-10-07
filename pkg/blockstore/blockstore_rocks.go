@@ -24,6 +24,8 @@ type DB struct {
 	CfBlockTime   *grocksdb.ColumnFamilyHandle
 	CfBlockHeight *grocksdb.ColumnFamilyHandle
 	CfRewards     *grocksdb.ColumnFamilyHandle
+	// CfDoubleMerkleMeta is nil on ledgers older than Agave 4.3.
+	CfDoubleMerkleMeta *grocksdb.ColumnFamilyHandle
 }
 
 // OpenReadOnly attaches to a blockstore in read-only mode.
@@ -151,6 +153,7 @@ func open(path string, secondaryPath string) (*DB, error) {
 	// if db.CfBlockHeight == nil {
 	// 	return nil, errors.New("missing column family " + CfBlockHeight)
 	// }
+	// CfDoubleMerkleMeta is optional; GetBlockID errors only for slots that need it.
 
 	return db, nil
 }
@@ -175,6 +178,8 @@ func getCfOpts(db *DB, name string) (**grocksdb.ColumnFamilyHandle, *grocksdb.Op
 		return &db.CfRewards, grocksdb.NewDefaultOptions()
 	case CfBlockHeight:
 		return &db.CfBlockHeight, grocksdb.NewDefaultOptions()
+	case CfDoubleMerkleMetaName:
+		return &db.CfDoubleMerkleMeta, grocksdb.NewDefaultOptions()
 	default:
 		return nil, nil
 	}
