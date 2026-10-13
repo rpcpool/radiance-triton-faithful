@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	bin "github.com/gagliardetto/binary"
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"go.firedancer.io/radiance/pkg/shred"
 )
 
@@ -111,9 +112,12 @@ type Entries struct {
 	Entries []shred.Entry
 	// Marker is set (and Entries empty) when this data-complete range holds an
 	// Alpenglow block marker instead of an entry batch.
-	Marker *BlockMarker
-	Raw    []byte
-	Shreds []shred.Shred
+	Marker *blockmarker.Marker
+	// BeforeReplay marks a marker from the shreds before ReplayFecSetIndex. It
+	// has no entry in ReplayEntryEndIndexes.
+	BeforeReplay bool
+	Raw          []byte
+	Shreds       []shred.Shred
 }
 
 func (e *Entries) Slot() uint64 {
@@ -180,15 +184,38 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 		consumed = len(shredsIn)
 	}
 	shreds := shredsIn[:consumed]
-	// After an UpdateParent marker, replay starts at ReplayFecSetIndex; the shreds
-	// before it were built on the abandoned parent and are not part of the block.
-	if start := int(meta.ReplayFecSetIndex); start > 0 {
-		if start >= len(shreds) {
-			return nil, fmt.Errorf("slot %d: replay_fec_set_index=%d beyond consumed=%d", meta.Slot, start, len(shreds))
-		}
-		shreds = shreds[start:]
+	start := int(meta.ReplayFecSetIndex)
+	if start == 0 {
+		return decodeEntries(meta, shreds, false)
+	}
+	if start >= len(shreds) {
+		return nil, fmt.Errorf("slot %d: replay_fec_set_index=%d beyond consumed=%d", meta.Slot, start, len(shreds))
 	}
 
+	// After an UpdateParent marker, replay starts at ReplayFecSetIndex: the entries
+	// before it were never executed, but its header (and genesis cert) still belong
+	// to the block. Decoding the prefix separately keeps the replayed part identical.
+	prefix, err := decodeEntries(meta, shreds[:start], true)
+	if err != nil {
+		return nil, fmt.Errorf("before replay_fec_set_index=%d: %w", start, err)
+	}
+	var out []Entries
+	for _, e := range prefix {
+		if e.Marker != nil {
+			e.BeforeReplay = true
+			out = append(out, e)
+		}
+	}
+	replayed, err := decodeEntries(meta, shreds[start:], false)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, replayed...), nil
+}
+
+// decodeEntries decodes the batches and markers in shreds. allowTrailing
+// tolerates an unfinished batch at the end, as in an abandoned prefix.
+func decodeEntries(meta *SlotMeta, shreds []shred.Shred, allowTrailing bool) ([]Entries, error) {
 	var (
 		out  []Entries
 		buf  []byte
@@ -208,7 +235,7 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 
 			// Alpenglow block marker: u64 zero entry count + VersionedBlockMarker.
 			if numEntries, ok := peekU64LE(buf); ok && numEntries == 0 {
-				marker, n, err := ParseBlockMarker(buf[8:])
+				marker, n, err := blockmarker.ParsePrefix(buf[8:])
 				if err == nil {
 					consumedBytes := 8 + n
 					startShred, endShred := segRangeForBytes(segs, consumedBytes)
@@ -324,7 +351,7 @@ func DataShredsToEntries(meta *SlotMeta, shredsIn []shred.Shred) ([]Entries, err
 	}
 
 	// End: allow only zero padding.
-	if len(buf) != 0 && !isAllZero(buf) {
+	if !allowTrailing && len(buf) != 0 && !isAllZero(buf) {
 		// A last-resort: sometimes buf starts with junk; if it's obviously not a Vec prefix, ignore only if all padding.
 		if strings.Trim(string(buf), "\x00") != "" {
 			return nil, fmt.Errorf("slot %d: trailing undecoded non-zero bytes=%d", meta.Slot, len(buf))

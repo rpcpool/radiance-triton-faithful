@@ -21,6 +21,7 @@ import (
 	"github.com/ipld/go-ipld-prime/schema"
 	"github.com/klauspost/compress/zstd"
 	"github.com/multiformats/go-multicodec"
+	"github.com/rpcpool/yellowstone-faithful/blockmarker"
 	"github.com/rpcpool/yellowstone-faithful/ipld/ipldbindcode"
 	"github.com/rpcpool/yellowstone-faithful/iplddecoders"
 	solanablockrewards "github.com/rpcpool/yellowstone-faithful/solana-block-rewards"
@@ -87,10 +88,6 @@ func (w blockWorker) Run(
 	if err != nil {
 		return err
 	}
-	footer, err := radianceblockstore.BlockFooterMarker(markers)
-	if err != nil {
-		return fmt.Errorf("slot %d: %w", slot, err)
-	}
 
 	isNewTxMetaKeyFormat := true
 	if txMetaNewFormatOverride != nil {
@@ -154,6 +151,15 @@ func (w blockWorker) Run(
 	if err != nil {
 		return fmt.Errorf("failed to get rewards for slot %d: %w", slot, err)
 	}
+	// Only Alpenglow blocks (which always carry markers) have a block id.
+	var blockID []byte
+	if len(markers) > 0 {
+		id, err := w.handle.DB.GetBlockID(slot)
+		if err != nil {
+			return fmt.Errorf("failed to get block id for slot %d: %w", slot, err)
+		}
+		blockID = id[:]
+	}
 	// if true {
 	// 	rewards = getRandomBytes(10 * MiB)
 	// }
@@ -169,7 +175,8 @@ func (w blockWorker) Run(
 		entries,
 		metas,
 		blockRewards,
-		footer,
+		markers,
+		blockID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to construct block: %w", err)
@@ -487,7 +494,8 @@ func constructBlock(
 	entries [][]shred.Entry,
 	metas []*blockstore.TransactionStatusMetaWithRaw,
 	blockRewardsBlob []byte,
-	footer *radianceblockstore.BlockMarker,
+	markers []*blockmarker.Marker,
+	blockID []byte,
 ) (datamodel.Link, error) {
 	shredding, err := buildShredding(slotMeta, entries)
 	if err != nil {
@@ -583,10 +591,17 @@ func constructBlock(
 				} else {
 					qp.MapEntry(ma, "block_height", qp.Int(int64(*blockHeight)))
 				}
-				// Alpenglow: archive the raw block footer marker. Omitted before
-				// Alpenglow so older blocks encode exactly as before.
-				if footer != nil {
-					qp.MapEntry(ma, "block_footer", qp.Bytes(footer.Raw))
+				// Alpenglow: archive every raw block marker in block order. Omitted
+				// before Alpenglow so older blocks encode exactly as before.
+				if len(markers) > 0 {
+					qp.MapEntry(ma, "block_markers", qp.List(int64(len(markers)), func(la datamodel.ListAssembler) {
+						for _, m := range markers {
+							qp.ListEntry(la, qp.Bytes(m.Raw))
+						}
+					}))
+					if blockID != nil {
+						qp.MapEntry(ma, "block_id", qp.Bytes(blockID))
+					}
 				}
 			}),
 		)
