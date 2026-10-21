@@ -29,7 +29,7 @@ require (
 	github.com/ipld/go-car v0.6.1
 	github.com/ipld/go-car/v2 v2.13.1
 	github.com/ipld/go-ipld-prime v0.21.0
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.7
 	github.com/linxGnu/grocksdb v1.9.7
 	github.com/mattn/go-isatty v0.0.20
 	github.com/minio/sha256-simd v1.0.1
